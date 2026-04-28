@@ -8,7 +8,7 @@ Road graphs as `.osm.pbf` from [Geofabrik](https://download.geofabrik.de/) (Open
 
 ## Programs
 
-1. **osm2txt** (C++) — Reads `.osm.pbf`, extracts a simplified directed road graph, writes a compact `.txt` format (edge list / adjacency; see source for schema).
+1. **osm2txt** (Python, `pyosmium`) — Reads `.osm.pbf`, extracts a simplified directed road graph, writes `N, M, offsets, to, length` in `.txt` or `.bin`.
 2. **partition** - Partitions the graph for further processing(**C++**), writes  `.txt`.
 3. **preprocess** — Computes arc-flags labels on a graph. Two builds: **plain C++** and **CUDA C++**, same output format, for runtime comparison. Writes a preprocessed `.txt`.
 4. **query** — Loads the preprocessed graph and answers batches of `(source, target)` pairs (stdin or file; TBD).
@@ -96,8 +96,8 @@ All programs use explicit input/output paths and a selectable encoding:
 - `--format bin|txt` output encoding (`bin` default)
 
 ```bash
-osm2txt --in poland-latest.osm.pbf --out graph.bin --format bin
-osm2txt --in poland-latest.osm.pbf --out graph.txt --format txt
+python3 osm2txt.py --in poland-latest.osm.pbf --out graph.bin --format bin
+python3 osm2txt.py --in poland-latest.osm.pbf --out graph.txt --format txt
 partition --in graph.bin --out partition.bin --format bin
 partition --in graph.txt --out partition.txt --format txt
 preprocess --in partition.bin --out preprocessed.bin --format bin
@@ -105,6 +105,35 @@ preprocess_cuda --in partition.bin --out preprocessed_cuda.bin --format bin
 preprocess --in partition.txt --out preprocessed.txt --format txt
 query --graph preprocessed.bin --queries queries.txt --format bin
 query --graph preprocessed.txt --queries queries.txt --format txt
+```
+
+### `osm2txt.py` specific options
+
+Install dependency:
+
+```bash
+python3 -m pip install osmium
+```
+
+Large-file cache backend (for node locations used in edge length computation):
+
+- `--location-cache ram|disk` (`ram` default)
+- `--location-index sparse|dense` (when cache is `disk`)
+- `--location-cache-file <path>` optional on-disk cache file path
+
+Examples:
+
+```bash
+# RAM-backed location cache (default)
+python3 osm2txt.py --in poland-latest.osm.pbf --out graph.bin --format bin
+
+# Disk-backed sparse location cache with explicit cache file
+python3 osm2txt.py --in poland-latest.osm.pbf --out graph.bin --format bin \
+  --location-cache disk --location-index sparse \
+  --location-cache-file /tmp/osm2txt-location.store
+
+# Text output with custom length precision
+python3 osm2txt.py --in poland-latest.osm.pbf --out graph.txt --format txt --precision 4
 ```
 
 ## Build
