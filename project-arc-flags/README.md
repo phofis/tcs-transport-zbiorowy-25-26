@@ -2,6 +2,44 @@
 
 Educational implementation of **arc-flags** preprocessing for fast **point-to-point** shortest-path queries, following *Fast Point-to-Point Shortest Path Computations with Arc-Flags* (Hilger, Köhler, Möhring, Schilling, 2006).
 
+## Makefile quick usage
+
+From `project-arc-flags/`:
+
+```bash
+# Build partition binary (defaults: METIS in /usr/local, R=64)
+make partition
+
+# Build partition binary with custom METIS install prefix
+make partition METIS_PREFIX=$HOME/local
+
+# Main pipeline entrypoint (requires only graph + queries)
+make run GRAPH_IN=graph.bin QUERIES_IN=queries.txt METIS_PREFIX=$HOME/local
+
+# Run partition stage explicitly on binary graph input
+make partition-bin GRAPH_IN=graph.bin METIS_PREFIX=$HOME/local
+# writes: partition/partition.graph.bin
+
+# Run partition stage explicitly on text graph input
+make partition-txt GRAPH_IN=graph.txt METIS_PREFIX=$HOME/local
+# writes: partition/partition.graph.txt
+```
+
+Key Makefile variables:
+- `METIS_PREFIX` path containing `include/metis.h` and `lib/libmetis.so`
+- `GRAPH_IN` input graph file produced by `osm2txt`
+- `QUERIES_IN` query file for the final stage input
+- `PARTITION_DIR` default `partition`
+- `FLAGS_DIR` default `flags`
+- `OUT_DIR` default `out`
+- `REGION_COUNT` compile-time region count for partitioning (`R`)
+- `PARTITION_SEED` compile-time METIS seed for reproducibility
+
+Default folder layout:
+- `partition/` — partition stage outputs
+- `flags/` — preprocess stage outputs
+- `out/` — final query outputs
+
 ## Data
 
 Road graphs as `.osm.pbf` from [Geofabrik](https://download.geofabrik.de/) (OpenStreetMap, ODbL). This project does not redistribute map data.
@@ -15,7 +53,11 @@ Road graphs as `.osm.pbf` from [Geofabrik](https://download.geofabrik.de/) (Open
 
 ## Format
 
-All intermediate graph files are stored as arrays in this order. Vertex and edge IDs are `0..N-1` and `0..M-1`.
+Pipeline files are **incremental**:
+- each stage writes only the new data produced by that stage
+- downstream stages read multiple input files (`osm2txt` base graph + stage-specific label files)
+
+Vertex and edge IDs are `0..N-1` and `0..M-1` with respect to the base graph from `osm2txt`.
 
 ### 1) `osm2txt` output
 
@@ -36,13 +78,11 @@ Notes:
 
 ### 2) `partition` output
 
-Contains everything from `osm2txt`, plus:
 - `R` (`uint32`) - number of regions (constant configured in partition source)
 - `region` (`uint32[N]`) - region ID for each vertex (`0..R-1`)
 
 ### 3) `preprocess` output
 
-Contains everything from `partition`, plus:
 - `arcFlags` (`uint32[M * ceil(R/32)]`) - arc-flags bitset per edge.  
   Each bit is one region flag, starting from the most significant bit in each `uint32`.
 
@@ -51,8 +91,10 @@ If `R` is not divisible by 32, unused bits are left as padding.
 ### 4) Query input
 
 `query` reads:
-1. preprocessed graph file (from `preprocess`)
-2. query file with `Q` pairs `(s, t)` (source, target)
+1. base graph file (from `osm2txt`)
+2. partition labels file (from `partition`)
+3. arc-flags file (from `preprocess`)
+4. query file with `Q` pairs `(s, t)` (source, target)
 
 #### Structure
 1. First line: `Q` (`uint32`) - number of queries.
@@ -89,22 +131,36 @@ Binary rules:
 
 ## CLI conventions
 
-All programs use explicit input/output paths and a selectable encoding:
+All programs use explicit paths and a selectable encoding.
 
-- `--in <path>` input file
+- `--in <path>` primary input file
 - `--out <path>` output file
 - `--format bin|txt` output encoding (`bin` default)
+
+Downstream tools can take additional stage files as separate inputs (for example partition labels and arc-flags labels).
+
+### File naming convention
+
+Generated pipeline artifacts should follow:
+
+- `program.sourceName.format`
+
+Examples:
+- `partition/partition.malo.bin`
+- `partition/partition.malo.txt`
+- `flags/preprocess.malo.bin`
+- `out/query.malo.txt`
 
 ```bash
 python3 osm2txt.py --in poland-latest.osm.pbf --out graph.bin --format bin
 python3 osm2txt.py --in poland-latest.osm.pbf --out graph.txt --format txt
-partition --in graph.bin --out partition.bin --format bin
-partition --in graph.txt --out partition.txt --format txt
-preprocess --in partition.bin --out preprocessed.bin --format bin
-preprocess_cuda --in partition.bin --out preprocessed_cuda.bin --format bin
-preprocess --in partition.txt --out preprocessed.txt --format txt
-query --graph preprocessed.bin --queries queries.txt --format bin
-query --graph preprocessed.txt --queries queries.txt --format txt
+partition --in graph.bin --out partition.graph.bin --format bin
+partition --in graph.txt --out partition.graph.txt --format txt
+preprocess --graph graph.bin --partition partition.graph.bin --out preprocess.graph.bin --format bin
+preprocess_cuda --graph graph.bin --partition partition.graph.bin --out preprocess_cuda.graph.bin --format bin
+preprocess --graph graph.txt --partition partition.graph.txt --out preprocess.graph.txt --format txt
+query --graph graph.bin --partition partition.graph.bin --flags preprocess.graph.bin --queries queries.txt --format bin
+query --graph graph.txt --partition partition.graph.txt --flags preprocess.graph.txt --queries queries.txt --format txt
 ```
 
 ### `osm2txt.py` specific options
@@ -139,3 +195,52 @@ python3 osm2txt.py --in poland-latest.osm.pbf --out graph.txt --format txt --pre
 ## Build
 
 GCC C++, CUDA toolkit, Make
+
+### Install METIS (from GitHub source)
+
+`partition` uses the METIS C library. A straightforward way is to build and install METIS (and GKlib) into a local prefix, then point this project Makefile to that prefix.
+
+1. Install build dependencies (Ubuntu/Debian):
+
+```bash
+sudo apt-get update
+sudo apt-get install -y build-essential cmake git
+```
+
+2. Build and install GKlib:
+
+```bash
+git clone https://github.com/KarypisLab/GKlib.git
+cd GKlib
+make config prefix=$HOME/local
+make install
+```
+
+3. Build and install METIS:
+
+```bash
+git clone https://github.com/KarypisLab/METIS.git
+cd METIS
+make config shared=1 cc=gcc prefix=$HOME/local gklib_path=$HOME/local
+make install
+```
+
+This installs artifacts to:
+
+- `$HOME/local/include` (headers, including `metis.h`)
+- `$HOME/local/lib` (library, e.g. `libmetis.so`)
+- `$HOME/local/bin` (METIS tools)
+
+4. Use these paths when compiling `partition`:
+
+```bash
+make METIS_PREFIX=$HOME/local
+```
+
+If your Makefile does not yet expose `METIS_PREFIX`, pass equivalent flags explicitly:
+
+- include path: `-I$HOME/local/include`
+- library path: `-L$HOME/local/lib`
+- link: `-lmetis`
+
+Reference: [KarypisLab/METIS](https://github.com/KarypisLab/METIS/tree/master)
