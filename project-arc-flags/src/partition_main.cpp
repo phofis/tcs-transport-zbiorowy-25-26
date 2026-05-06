@@ -31,13 +31,6 @@ void WritePartitionText(const std::string& path, const GraphData& graph, const u
   if (!output) {
     throw std::runtime_error("Cannot open output file: " + path);
   }
-  output << graph.n << '\n';
-  output << graph.m << '\n';
-  WriteTextVector(output, graph.offsets);
-  WriteTextVector(output, graph.to);
-
-  output << std::setprecision(9);
-  WriteTextVector(output, graph.length);
   output << regions_count << '\n';
   WriteTextVector(output, regions);
 }
@@ -48,11 +41,6 @@ void WritePartitionBinary(const std::string& path, const GraphData& graph, const
   if (!output) {
     throw std::runtime_error("Cannot open output file: " + path);
   }
-  output.write(reinterpret_cast<const char*>(&graph.n), sizeof(uint32_t));
-  output.write(reinterpret_cast<const char*>(&graph.m), sizeof(uint32_t));
-  WriteBinaryVector(output, graph.offsets);
-  WriteBinaryVector(output, graph.to);
-  WriteBinaryVector(output, graph.length);
   output.write(reinterpret_cast<const char*>(&regions_count), sizeof(uint32_t));
   WriteBinaryVector(output, regions);
 }
@@ -172,6 +160,12 @@ int main(int argc, char** argv) {
       }
     }
     const arcflags::CliOptions options = arcflags::ParseCliArgs(argc, argv);
+    if(options.input_path.empty()) {
+      arcflags::ThrowUsageError("Missing required --in");
+    }
+    if(options.output_path.empty()) {
+      arcflags::ThrowUsageError("Missing required --out");
+    }
     const arcflags::GraphData graph = arcflags::ReadGraph(options);
     const uint32_t regions_count = static_cast<uint32_t>(PARTITION_REGIONS);
     const std::vector<uint32_t> regions = arcflags::ComputeRegionsWithMetis(graph, regions_count);

@@ -92,6 +92,34 @@ CliOptions ParseCliArgs(int argc, char** argv) {
       options.output_path = argv[++i];
       continue;
     }
+    if(arg == "--graph") {
+      if (i + 1 >= argc) {
+        ThrowUsageError("Missing value for --graph");
+      }
+      options.graph_path = argv[++i];
+      continue;
+    }
+    if(arg == "--partition") {
+      if (i + 1 >= argc) {
+        ThrowUsageError("Missing value for --partition");
+      }
+      options.partition_path = argv[++i];
+      continue;
+    }
+    if(arg == "--flags") {
+      if (i + 1 >= argc) {
+        ThrowUsageError("Missing value for --flags");
+      }
+      options.flags_path = argv[++i];
+      continue;
+    }
+    if(arg == "--query") {
+      if (i + 1 >= argc) {
+        ThrowUsageError("Missing value for --query");
+      }
+      options.query_path = argv[++i];
+      continue;
+    }
     if (arg == "--format") {
       if (i + 1 >= argc) {
         ThrowUsageError("Missing value for --format");

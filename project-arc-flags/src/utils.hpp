@@ -16,6 +16,10 @@ enum class Encoding {
 struct CliOptions {
   std::string input_path;
   std::string output_path;
+  std::string graph_path;
+  std::string partition_path;
+  std::string flags_path;
+  std::string query_path;
   Encoding format = Encoding::kBin;
 };
 
