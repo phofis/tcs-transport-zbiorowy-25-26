@@ -251,4 +251,5 @@ void WriteBinaryVector(std::ostream& output, const std::vector<float>& values) {
   WriteBinaryVectorImpl(output, values);
 }
 
+
 }  // namespace arcflags

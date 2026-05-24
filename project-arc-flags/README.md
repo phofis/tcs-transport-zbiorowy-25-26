@@ -66,15 +66,11 @@ Header:
 - `M` (`uint32`) - number of edges
 
 Tables:
-1. `offsets` (`uint32[N]`) - CSR-like prefix starts of outgoing edges per vertex.  
-   `offsets[i]` is the first index in `to[]` for vertex `i`.
+1. `offsets` (`uint32[N + 1]`) - CSR-like prefix starts of outgoing edges per vertex.  
+   `offsets[i]` is the first index in `to[]` for vertex `i`, and `offsets[N] = M`
 2. `to` (`uint32[M]`) - destination vertex for each edge.  
    Edges are grouped by source vertex: first `k0` edges for vertex `0`, then `k1` for vertex `1`, etc.
 3. `length` (`float32[M]`) - real-world edge length for each edge in `to[]`.
-
-Notes:
-- For `i < N-1`: `k_i = offsets[i+1] - offsets[i]`
-- For `i = N-1`: `k_i = M - offsets[N-1]`
 
 ### 2) `partition` output
 

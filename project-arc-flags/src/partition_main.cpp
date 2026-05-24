@@ -25,7 +25,7 @@
 namespace arcflags {
 namespace {
 
-void WritePartitionText(const std::string& path, const GraphData& graph, const uint32_t regions_count,
+void WritePartitionText(const std::string& path, const uint32_t regions_count,
                         const std::vector<uint32_t>& regions) {
   std::ofstream output(path);
   if (!output) {
@@ -35,7 +35,7 @@ void WritePartitionText(const std::string& path, const GraphData& graph, const u
   WriteTextVector(output, regions);
 }
 
-void WritePartitionBinary(const std::string& path, const GraphData& graph, const uint32_t regions_count,
+void WritePartitionBinary(const std::string& path, const uint32_t regions_count,
                           const std::vector<uint32_t>& regions) {
   std::ofstream output(path, std::ios::binary);
   if (!output) {
@@ -45,7 +45,7 @@ void WritePartitionBinary(const std::string& path, const GraphData& graph, const
   WriteBinaryVector(output, regions);
 }
 
-void WritePartition(const CliOptions& options, const GraphData& graph, const uint32_t regions_count,
+void WritePartition(const CliOptions& options, const uint32_t regions_count,
                     const std::vector<uint32_t>& regions) {
   const std::filesystem::path out_path(options.output_path);
   if (out_path.has_parent_path()) {
@@ -53,9 +53,9 @@ void WritePartition(const CliOptions& options, const GraphData& graph, const uin
   }
 
   if (options.format == Encoding::kTxt) {
-    WritePartitionText(options.output_path, graph, regions_count, regions);
+    WritePartitionText(options.output_path, regions_count, regions);
   } else {
-    WritePartitionBinary(options.output_path, graph, regions_count, regions);
+    WritePartitionBinary(options.output_path, regions_count, regions);
   }
 }
 
@@ -76,9 +76,7 @@ std::vector<uint32_t> ComputeRegionsWithMetis(const GraphData& graph, const uint
   seen_edges.reserve(static_cast<std::size_t>(graph.m));
 
   for (uint32_t src = 0; src < graph.n; ++src) {
-    const uint32_t begin = graph.offsets[src];
-    const uint32_t end = (src + 1 < graph.n) ? graph.offsets[src + 1] : graph.m;
-    for (uint32_t edge_id = begin; edge_id < end; ++edge_id) {
+    for (uint32_t edge_id = graph.offsets[src]; edge_id < graph.offsets[src + 1]; ++edge_id) {
       const uint32_t dst = graph.to[edge_id];
       if (src == dst) {
         continue;
@@ -161,15 +159,15 @@ int main(int argc, char** argv) {
     }
     const arcflags::CliOptions options = arcflags::ParseCliArgs(argc, argv);
     if(options.input_path.empty()) {
-      arcflags::ThrowUsageError("Missing required --in");
+      throw std::runtime_error("Missing required --in");
     }
     if(options.output_path.empty()) {
-      arcflags::ThrowUsageError("Missing required --out");
+      throw std::runtime_error("Missing required --out");
     }
     const arcflags::GraphData graph = arcflags::ReadGraph(options);
     const uint32_t regions_count = static_cast<uint32_t>(PARTITION_REGIONS);
     const std::vector<uint32_t> regions = arcflags::ComputeRegionsWithMetis(graph, regions_count);
-    arcflags::WritePartition(options, graph, regions_count, regions);
+    arcflags::WritePartition(options, regions_count, regions);
     std::cerr << "partition: wrote " << graph.n << " vertices, " << graph.m << " edges, R=" << regions_count
               << " in " << arcflags::EncodingName(options.format) << " format\n";
     return 0;

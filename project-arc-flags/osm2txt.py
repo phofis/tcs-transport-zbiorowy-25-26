@@ -153,7 +153,7 @@ class EdgeBuildPass(osmium.SimpleHandler):
 
 
 def to_csr(adjacency: Dict[int, List[Tuple[int, float]]], n_vertices: int) -> Tuple[List[int], List[int], List[float]]:
-    offsets: List[int] = [0] * n_vertices
+    offsets: List[int] = [0] * (n_vertices + 1)
     to: List[int] = []
     length: List[float] = []
 
@@ -165,8 +165,9 @@ def to_csr(adjacency: Dict[int, List[Tuple[int, float]]], n_vertices: int) -> Tu
             to.append(dst)
             length.append(dist)
             cursor += 1
+    offsets[n_vertices] = cursor
     return offsets, to, length
-
+    return offsets, to, length  
 
 def write_text(path: Path, n: int, m: int, offsets: Sequence[int], to: Sequence[int], length: Sequence[float], precision: int) -> None:
     with path.open("w", encoding="utf-8") as handle:

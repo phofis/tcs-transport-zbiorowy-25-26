@@ -20,6 +20,12 @@ PARTITION_BIN := $(BIN_DIR)/partition
 PARTITION_CXXFLAGS := $(CXXFLAGS) -I$(METIS_INC) -DPARTITION_REGIONS=$(REGION_COUNT) -DPARTITION_SEED=$(PARTITION_SEED)
 PARTITION_LDFLAGS := $(LDFLAGS) -L$(METIS_LIB) -Wl,-rpath,$(METIS_LIB) -lmetis
 
+PREPROCESS_SRCS := $(SRC_DIR)/preprocess.cpp $(SRC_DIR)/utils.cpp
+PREPROCESS_BIN := $(BIN_DIR)/preprocess
+
+PREPROCESS_CXXFLAGS := $(CXXFLAGS)
+PREPROCESS_LDFLAGS := $(LDFLAGS)
+
 GRAPH_IN ?=
 QUERIES_IN ?=
 PARTITION_DIR ?= partition
@@ -46,8 +52,10 @@ partition: $(PARTITION_BIN)
 $(PARTITION_BIN): $(PARTITION_SRCS) $(SRC_DIR)/utils.hpp Makefile | $(BIN_DIR)
 	$(CXX) $(PARTITION_CXXFLAGS) $(PARTITION_SRCS) -o $@ $(PARTITION_LDFLAGS)
 
-preprocess:
-	@echo "preprocess target placeholder (expected: --graph $(GRAPH_IN) --partition <partition file> --out <flags file>)"
+preprocess: $(PREPROCESS_BIN)
+
+$(PREPROCESS_BIN): $(PREPROCESS_SRCS) $(SRC_DIR)/utils.hpp Makefile | $(BIN_DIR)
+	$(CXX) $(PREPROCESS_CXXFLAGS) $(PREPROCESS_SRCS) -o $@ $(PREPROCESS_LDFLAGS)
 
 preprocess_cuda:
 	@echo "preprocess_cuda target placeholder (expected: --graph $(GRAPH_IN) --partition <partition file> --out <flags file>)"
