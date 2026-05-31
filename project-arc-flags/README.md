@@ -47,8 +47,8 @@ Road graphs as `.osm.pbf` from [Geofabrik](https://download.geofabrik.de/) (Open
 ## Programs
 
 1. **osm2txt** (Python, `pyosmium`) — Reads `.osm.pbf`, extracts a simplified directed road graph, writes `N, M, offsets, to, length` in `.txt` or `.bin`.
-2. **partition** - Partitions the graph for further processing(**C++**), writes  `.txt`.
-3. **preprocess** — Computes arc-flags labels on a graph. Two builds: **plain C++** and **CUDA C++**, same output format, for runtime comparison. Writes a preprocessed `.txt`.
+2. **partition** - Partitions the graph for further processing(**C++**), writes  `.txt` or `.bin`.
+3. **preprocess** — Computes arc-flags labels on a graph. Two builds: **plain C++** and **CUDA C++**, same output format, for runtime comparison. Writes a preprocessed `.txt` or `.bin`.
 4. **query** — Loads the preprocessed graph and answers batches of `(source, target)` pairs (stdin or file; TBD).
 
 ## Format
@@ -150,8 +150,8 @@ Examples:
 ```bash
 python3 osm2txt.py --in poland-latest.osm.pbf --out graph.bin --format bin
 python3 osm2txt.py --in poland-latest.osm.pbf --out graph.txt --format txt
-partition --in graph.bin --out partition.graph.bin --format bin
-partition --in graph.txt --out partition.graph.txt --format txt
+partition --graph graph.bin --out partition.graph.bin --format bin
+partition --graph graph.txt --out partition.graph.txt --format txt
 preprocess --graph graph.bin --partition partition.graph.bin --out preprocess.graph.bin --format bin
 preprocess_cuda --graph graph.bin --partition partition.graph.bin --out preprocess_cuda.graph.bin --format bin
 preprocess --graph graph.txt --partition partition.graph.txt --out preprocess.graph.txt --format txt

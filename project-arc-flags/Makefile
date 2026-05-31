@@ -66,12 +66,12 @@ query:
 partition-bin: partition
 	@test -n "$(GRAPH_IN)" || (echo "GRAPH_IN is required, e.g. make partition-bin GRAPH_IN=graph.bin" && exit 1)
 	mkdir -p "$(PARTITION_DIR)"
-	$(PARTITION_BIN) --in "$(GRAPH_IN)" --out "$(PARTITION_BIN_OUT)" --format bin
+	$(PARTITION_BIN) --graph "$(GRAPH_IN)" --out "$(PARTITION_BIN_OUT)" --format bin
 
 partition-txt: partition
 	@test -n "$(GRAPH_IN)" || (echo "GRAPH_IN is required, e.g. make partition-txt GRAPH_IN=graph.txt" && exit 1)
 	mkdir -p "$(PARTITION_DIR)"
-	$(PARTITION_BIN) --in "$(GRAPH_IN)" --out "$(PARTITION_TXT_OUT)" --format txt
+	$(PARTITION_BIN) --graph "$(GRAPH_IN)" --out "$(PARTITION_TXT_OUT)" --format txt
 
 pipeline-bin: partition-bin preprocess query
 

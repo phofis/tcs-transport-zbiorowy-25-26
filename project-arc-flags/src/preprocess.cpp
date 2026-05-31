@@ -1,93 +1,80 @@
 #include <fstream>
 #include <vector>
+#include <queue>
+#include <utility>
 #include <cstdint>
 #include "utils.hpp"
 #include <iostream>
 #include <filesystem>
-
+#include <cmath>
 namespace arcflags {
 
-struct PartitionData {
-    uint32_t regions_count;
-    std::vector<uint32_t> region;
+struct State {
+    uint32_t v;
+    float dist;
+
+};
+struct StateComp {
+    bool operator()(const State& a, const State& b) const {
+        return a.dist > b.dist;
+    }
 };
 
-PartitionData ReadPartitionText(const std::string& path, const uint32_t n) {
-    std::ifstream input(path);
-    if (!input) {
-        throw std::runtime_error("Cannot open input file: " + path);
-    }
-    PartitionData partition;
-    if (!(input >> partition.regions_count)) {
-        throw std::runtime_error("Could not read regions count from text input.");
-    }
-    partition.region = ReadTextVectorU32(input, n, "region");
-    return partition;
-}
+std::vector<uint32_t> findBoundaryVertices(
+    const GraphData& graph,
+    const PartitionData& partition,
+    std::vector<uint32_t>& boundaryOffsets)
+{
+    const uint32_t R = partition.regions_count;
 
-PartitionData ReadPartitionBinary(const std::string& path, const uint32_t n) {
-    std::ifstream input(path, std::ios::binary);
-    if (!input) {
-        throw std::runtime_error("Cannot open input file: " + path);
-    }
-    PartitionData partition;
-    input.read(reinterpret_cast<char*>(&partition.regions_count), sizeof(uint32_t));
-    if (!input) {
-        throw std::runtime_error("Could not read regions count from binary input.");
-    }
-    partition.region = ReadBinaryVectorU32(input, n, "region");
-    return partition;
-}
+    boundaryOffsets.assign(R + 1, 0);
 
-PartitionData ReadPartition(const CliOptions& options, const uint32_t n) {
-    if (options.format == Encoding::kTxt) {
-        return ReadPartitionText(options.partition_path, n);
-    } else {
-        return ReadPartitionBinary(options.partition_path, n);
-    }
-}
+    // temporary storage: boundary candidates
+    std::vector<uint32_t> boundary_vertices_tmp;
+    boundary_vertices_tmp.reserve(graph.n / 10); // heuristic
 
-PartitionData ValidatePartition(const PartitionData& partition, const uint32_t n) {
-    if (partition.region.size() != n) {
-        throw std::runtime_error("Partition size does not match graph vertex count.");
-    }
-    for (const uint32_t r : partition.region) {
-        if (r >= partition.regions_count) {
-            throw std::runtime_error("Partition contains out-of-range region id.");
-        }
-    }
-    return partition;
-}
-// popraw to  zeby offsety liczyly sie poprawnie, aktualnie region_v + 1 moze wyjsc poza zakres - tak samo w reverseGraph
-std::vector<uint32_t> findBoundaryVertices(const GraphData& graph, const PartitionData& partition, std::vector<uint32_t>& boundaryOffsets) {
-    boundaryOffsets.resize(partition.regions_count, 0);
-    for(uint32_t v = 0; v < graph.n; ++v) {
-        const uint32_t region_v = partition.region[v];
-        const uint32_t left_boundary = graph.offsets[v];
-        const uint32_t right_boundary = (v != graph.n - 1 ? graph.offsets[v + 1] : graph.m);
-        for (uint32_t i = left_boundary; i < right_boundary; ++i) {
-            const uint32_t to = graph.to[i];
-            const uint32_t region_to = partition.region[to];
-            if (region_to != region_v) {
-                boundaryOffsets[region_v + 1]++;
-            }
-        }
-    }
-    std::vector<uint32_t> boundaryVertices;
+    std::vector<uint32_t> boundary_region_tmp;
+    boundary_region_tmp.reserve(graph.n / 10);
+
+    // ===== PASS 1: scan graph once =====
     for (uint32_t v = 0; v < graph.n; ++v) {
-        const uint32_t region_v = partition.region[v];
-        const uint32_t left_boundary = graph.offsets[v];
-        const uint32_t right_boundary = (v != graph.n - 1 ? graph.offsets[v + 1] : graph.m);
-        for (uint32_t i = left_boundary; i < right_boundary; ++i) {
-            const uint32_t to = graph.to[i];
-            const uint32_t region_to = partition.region[to];
-            if (region_to != region_v) {
-                const uint32_t pos = boundaryOffsets[region_v]++;
-                boundaryVertices.push
+
+        const uint32_t rv = partition.region[v];
+        bool is_boundary = false;
+
+        for (uint32_t i = graph.offsets[v];
+             i < graph.offsets[v + 1];
+             ++i)
+        {
+            if (partition.region[graph.to[i]] != rv) {
+                is_boundary = true;
                 break;
             }
         }
+
+        if (is_boundary) {
+            boundary_vertices_tmp.push_back(v);
+            boundary_region_tmp.push_back(rv);
+            boundaryOffsets[rv + 1]++;
+        }
     }
+
+    // ===== PREFIX SUM =====
+    for (uint32_t r = 1; r <= R; ++r) {
+        boundaryOffsets[r] += boundaryOffsets[r - 1];
+    }
+
+    // ===== PACK =====
+    std::vector<uint32_t> boundaryVertices(boundaryOffsets[R]);
+    std::vector<uint32_t> cursor = boundaryOffsets;
+
+    for (size_t i = 0; i < boundary_vertices_tmp.size(); ++i) {
+        uint32_t v = boundary_vertices_tmp[i];
+        uint32_t rv = boundary_region_tmp[i];
+
+        boundaryVertices[cursor[rv]++] = v;
+    }
+
     return boundaryVertices;
 }
 //rev_edge_id:  reverse graph edge id -> original graph edge id
@@ -95,31 +82,26 @@ GraphData reverseGraph(const GraphData& graph, std::vector<uint32_t>& rev_edge_i
     GraphData reversed;
     reversed.n = graph.n;
     reversed.m = graph.m;
-    reversed.offsets.resize(graph.n, 0);
+    reversed.offsets.resize(graph.n + 1, 0);
     reversed.to.resize(graph.m);
     reversed.length.resize(graph.m);
     rev_edge_id.resize(graph.m);
 
     for (uint32_t v = 0; v < graph.n; ++v) {
-        const uint32_t left_boundary = graph.offsets[v];
-        const uint32_t right_boundary = (v != graph.n - 1 ? graph.offsets[v + 1] : graph.m);
-        for (uint32_t i = left_boundary; i < right_boundary; ++i) {
+        for (uint32_t i = graph.offsets[v]; i < graph.offsets[v+1]; ++i) {
             const uint32_t to = graph.to[i];
-            const float length = graph.length[i];
             reversed.offsets[to + 1]++;
         }
     }
 
-    for (uint32_t v = 1; v < graph.n; ++v) {
+    for (uint32_t v = 1; v <= graph.n; ++v) {
         reversed.offsets[v] += reversed.offsets[v - 1];
     }
 
     std::vector<uint32_t> current_offset(reversed.offsets.begin(), reversed.offsets.end());
 
     for (uint32_t v = 0; v < graph.n; ++v) {
-        const uint32_t left_boundary = graph.offsets[v];
-        const uint32_t right_boundary = (v != graph.n - 1 ? graph.offsets[v + 1] : graph.m);
-        for (uint32_t i = left_boundary; i < right_boundary; ++i) {
+        for (uint32_t i = graph.offsets[v]; i < graph.offsets[v+1]; ++i) {
             const uint32_t to = graph.to[i];
             const float length = graph.length[i];
             const uint32_t offset = current_offset[to]++;
@@ -131,10 +113,92 @@ GraphData reverseGraph(const GraphData& graph, std::vector<uint32_t>& rev_edge_i
 
     return reversed;
 }
+void set_flag(std::vector<uint32_t>& arc_flags, uint32_t edge_id, uint32_t region, uint32_t region_count) {
+    const uint32_t W = (region_count + 31)/32;
+    uint32_t word = region >> 5;
+    
+    uint32_t bit = region & 31;
+    arc_flags[edge_id * W + word] |= (1u<< (31-bit));
+}
+bool read_flag(const std::vector<uint32_t>& arc_flags, uint32_t edge_id, uint32_t region, uint32_t region_count) {
+    const uint32_t W = (region_count + 31)/32;
+    uint32_t word = region >> 5;
+    
+    uint32_t bit = region & 31;
 
+    return (arc_flags[edge_id * W + word] >> (31 - bit)) & 1u;
+} 
+// dwie wersje: 1 - dijkstra z kazdej krawędzi 2- multi source dijkstra z kazdego 
 std::vector<uint32_t> arcFlagsPreprocessing(const GraphData& graph, const PartitionData& partition) {
+    const uint32_t N = graph.n;
+    const uint32_t M = graph.m;
+    const uint32_t R = partition.regions_count;
 
-    return std::vector<uint32_t>();
+    const uint32_t W = (R + 31) / 32;
+
+    std::vector<uint32_t> arc_flags(M * W, 0);
+
+    // boundary vertices grouped by region
+    std::vector<uint32_t> boundary_offsets;
+    std::vector<uint32_t> boundary_vertices =
+        findBoundaryVertices(graph, partition, boundary_offsets);
+
+    // reverse graph
+    std::vector<uint32_t> rev_edge_id;
+    GraphData graph_r = reverseGraph(graph, rev_edge_id);
+
+    constexpr float INF = std::numeric_limits<float>::infinity();
+    constexpr float EPS = 1e-6;
+
+    std::vector<float> dist(N);
+
+    for (uint32_t r = 0; r < R; ++r) {
+        
+        std::fill(dist.begin(), dist.end(), INF);
+        
+        std::priority_queue<
+            State,
+            std::vector<State>,
+            StateComp
+        > pq;
+        for (uint32_t i = boundary_offsets[r] ; i < boundary_offsets[r + 1]; ++i) {
+            uint32_t s = boundary_vertices[i];
+
+            dist[s] = 0.0f;
+            pq.push({s, 0.0f});
+        
+
+            // reverse Dijkstra
+            while (!pq.empty()) {
+
+                const State cur = pq.top();
+                pq.pop();
+
+                if (cur.dist > dist[cur.v])
+                    continue;
+
+                for (uint32_t e = graph_r.offsets[cur.v] ; e < graph_r.offsets[cur.v + 1] ; ++e) {
+                    uint32_t to = graph_r.to[e];
+                    float nd = cur.dist + graph_r.length[e];
+                    if (nd < dist[to] - EPS) {
+                        dist[to] = nd;
+                        pq.push({to, nd});
+                    }
+                }
+            }
+            //check if edge is on shortest path
+            for(uint32_t v = 0 ; v < N; ++v) {
+                for(uint32_t e = graph_r.offsets[v]; e < graph_r.offsets[v + 1]; ++e) {
+                    uint32_t to = graph_r.to[e];
+                    if(std::abs(dist[v] + graph_r.length[e] - dist[to]) <= EPS) {
+                        set_flag(arc_flags, rev_edge_id[e], r, R);
+                    }
+                }
+            }
+        }
+    }
+
+    return arc_flags;
 }
 
 }// namespace arcflags
@@ -142,19 +206,12 @@ std::vector<uint32_t> arcFlagsPreprocessing(const GraphData& graph, const Partit
 int main(int argc, char* argv[]) {
     try{
         const arcflags::CliOptions options = arcflags::ParseCliArgs(argc, argv);
-        if(options.graph_path.empty()) {
-            throw std::runtime_error("Missing required --graph");
-        }
+
         if(options.partition_path.empty()) {
             throw std::runtime_error("Missing required --partition");
         }
-        if(options.output_path.empty()) {
-            throw std::runtime_error("Missing required --out");
-        }
         const arcflags::GraphData graph = arcflags::ReadGraph(options);
         const arcflags::PartitionData partition = arcflags::ReadPartition(options, graph.n);
-        std::cout<<partition.regions_count<<std::endl;
-
         const std::vector<uint32_t> arcFlags = arcflags::arcFlagsPreprocessing(graph, partition);
 
 
@@ -162,20 +219,19 @@ int main(int argc, char* argv[]) {
         if (out_path.has_parent_path()) {
             std::filesystem::create_directories(out_path.parent_path());
         }
-        if(options.format == arcflags::Encoding::kTxt) {
-            std::ofstream output(options.flags_path);
+        
+        std::ofstream output(out_path);
+
+        if(options.format == arcflags::Encoding::kTxt) 
             arcflags::WriteTextVector(output, arcFlags);
-        } else {
-            std::ofstream output(options.flags_path, std::ios::binary);
+        else 
             arcflags::WriteBinaryVector(output, arcFlags);
-        }
         
         return 0;
     }
     catch(const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;
         return 1;
-
     }
 
 }

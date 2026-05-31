@@ -31,13 +31,25 @@ struct GraphData {
   std::vector<float> length;
 };
 
+struct PartitionData {
+    uint32_t regions_count;
+    std::vector<uint32_t> region;
+};
+
 CliOptions ParseCliArgs(int argc, char** argv);
 const char* EncodingName(Encoding encoding);
 std::string UsageText();
+
 void ValidateCsr(const GraphData& graph);
 GraphData ReadGraphText(const std::string& path);
 GraphData ReadGraphBinary(const std::string& path);
 GraphData ReadGraph(const CliOptions& options);
+
+void ValidatePartition(const PartitionData& partition, const uint32_t n);
+PartitionData ReadPartitionText(const std::string& path, const uint32_t n);
+PartitionData ReadPartitionBinary(const std::string& path, const uint32_t n);
+PartitionData ReadPartition(const CliOptions& options, const uint32_t n);
+
 
 std::vector<uint32_t> ReadTextVectorU32(std::istream& input, std::size_t count, const std::string& label);
 std::vector<float> ReadTextVectorFloat(std::istream& input, std::size_t count, const std::string& label);

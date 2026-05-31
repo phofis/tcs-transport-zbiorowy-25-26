@@ -78,13 +78,6 @@ CliOptions ParseCliArgs(int argc, char** argv) {
 
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];
-    if (arg == "--in") {
-      if (i + 1 >= argc) {
-        ThrowUsageError("Missing value for --in");
-      }
-      options.input_path = argv[++i];
-      continue;
-    }
     if (arg == "--out") {
       if (i + 1 >= argc) {
         ThrowUsageError("Missing value for --out");
@@ -137,8 +130,8 @@ CliOptions ParseCliArgs(int argc, char** argv) {
     ThrowUsageError("Unknown argument: " + arg);
   }
 
-  if (options.input_path.empty()) {
-    ThrowUsageError("Missing required --in");
+  if (options.graph_path.empty()) {
+    ThrowUsageError("Missing required --graph");
   }
   if (options.output_path.empty()) {
     ThrowUsageError("Missing required --out");
@@ -230,9 +223,9 @@ GraphData ReadGraphBinary(const std::string& path) {
 
 GraphData ReadGraph(const CliOptions& options) {
   if (options.format == Encoding::kTxt) {
-    return ReadGraphText(options.input_path);
+    return ReadGraphText(options.graph_path);
   }
-  return ReadGraphBinary(options.input_path);
+  return ReadGraphBinary(options.graph_path);
 }
 
 void WriteTextVector(std::ostream& output, const std::vector<uint32_t>& values) {
@@ -249,6 +242,53 @@ void WriteBinaryVector(std::ostream& output, const std::vector<uint32_t>& values
 
 void WriteBinaryVector(std::ostream& output, const std::vector<float>& values) {
   WriteBinaryVectorImpl(output, values);
+}
+
+
+PartitionData ReadPartitionText(const std::string& path, const uint32_t n) {
+    std::ifstream input(path);
+    if (!input) {
+        throw std::runtime_error("Cannot open input file: " + path);
+    }
+    PartitionData partition;
+    if (!(input >> partition.regions_count)) {
+        throw std::runtime_error("Could not read regions count from text input.");
+    }
+    partition.region = ReadTextVectorU32(input, n, "region");
+    return partition;
+}
+
+PartitionData ReadPartitionBinary(const std::string& path, const uint32_t n) {
+    std::ifstream input(path, std::ios::binary);
+    if (!input) {
+        throw std::runtime_error("Cannot open input file: " + path);
+    }
+    PartitionData partition;
+    input.read(reinterpret_cast<char*>(&partition.regions_count), sizeof(uint32_t));
+    if (!input) {
+        throw std::runtime_error("Could not read regions count from binary input.");
+    }
+    partition.region = ReadBinaryVectorU32(input, n, "region");
+    return partition;
+}
+
+PartitionData ReadPartition(const CliOptions& options, const uint32_t n) {
+    if (options.format == Encoding::kTxt) {
+        return ReadPartitionText(options.partition_path, n);
+    } else {
+        return ReadPartitionBinary(options.partition_path, n);
+    }
+}
+
+void ValidatePartition(const PartitionData& partition, const uint32_t n) {
+    if (partition.region.size() != n) {
+        throw std::runtime_error("Partition size does not match graph vertex count.");
+    }
+    for (const uint32_t r : partition.region) {
+        if (r >= partition.regions_count) {
+            throw std::runtime_error("Partition contains out-of-range region id.");
+        }
+    }
 }
 
 

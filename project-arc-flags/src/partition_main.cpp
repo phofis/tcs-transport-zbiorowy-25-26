@@ -158,12 +158,6 @@ int main(int argc, char** argv) {
       }
     }
     const arcflags::CliOptions options = arcflags::ParseCliArgs(argc, argv);
-    if(options.input_path.empty()) {
-      throw std::runtime_error("Missing required --in");
-    }
-    if(options.output_path.empty()) {
-      throw std::runtime_error("Missing required --out");
-    }
     const arcflags::GraphData graph = arcflags::ReadGraph(options);
     const uint32_t regions_count = static_cast<uint32_t>(PARTITION_REGIONS);
     const std::vector<uint32_t> regions = arcflags::ComputeRegionsWithMetis(graph, regions_count);
