@@ -9,6 +9,7 @@
 namespace arcflags {
 namespace {
 
+
 const char kUsageText[] = "Usage: partition --in <path> --out <path> [--format bin|txt]";
 
 [[noreturn]] void ThrowUsageError(const std::string& message) {
@@ -106,9 +107,9 @@ CliOptions ParseCliArgs(int argc, char** argv) {
       options.flags_path = argv[++i];
       continue;
     }
-    if(arg == "--query") {
+    if(arg == "--queries") {
       if (i + 1 >= argc) {
-        ThrowUsageError("Missing value for --query");
+        ThrowUsageError("Missing value for --queries");
       }
       options.query_path = argv[++i];
       continue;
@@ -127,6 +128,18 @@ CliOptions ParseCliArgs(int argc, char** argv) {
       }
       continue;
     }
+    if (arg == "--count") {
+      if (i + 1 >= argc) {
+        ThrowUsageError("Missing value for --count");
+      }
+      const std::string value = argv[++i];
+      try {
+        options.test_count = static_cast<uint32_t>(std::stoul(value));
+      } catch (...) {
+        ThrowUsageError("Invalid --count value: " + value);
+      }
+      continue;
+    }
     ThrowUsageError("Unknown argument: " + arg);
   }
 
@@ -141,7 +154,7 @@ CliOptions ParseCliArgs(int argc, char** argv) {
 }
 
 void ValidateCsr(const GraphData& graph) {
-  if (graph.offsets.size() != graph.n) {
+  if (graph.offsets.size() != graph.n + 1) {
     throw std::runtime_error("Invalid graph: offsets size does not match N.");
   }
   if (graph.to.size() != graph.m || graph.length.size() != graph.m) {
@@ -149,12 +162,18 @@ void ValidateCsr(const GraphData& graph) {
   }
 
   uint32_t previous = 0;
-  for (uint32_t i = 0; i < graph.n; ++i) {
+  for (uint32_t i = 0; i <= graph.n; ++i) {
     const uint32_t current = graph.offsets[i];
     if (current < previous || current > graph.m) {
       throw std::runtime_error("Invalid graph: offsets must be non-decreasing in [0,M].");
     }
     previous = current;
+  }
+  if (graph.offsets[0] != 0) {
+    throw std::runtime_error("Invalid graph: offsets[0] must be 0.");
+  }
+  if(graph.offsets[graph.n] != graph.m) {
+    throw std::runtime_error("Invalid graph: offsets[N] must be M.");
   }
 
   for (uint32_t edge_id = 0; edge_id < graph.m; ++edge_id) {
@@ -191,7 +210,7 @@ GraphData ReadGraphText(const std::string& path) {
     throw std::runtime_error("Could not read N and M from text input.");
   }
 
-  graph.offsets = ReadTextVectorU32(input, graph.n, "offsets");
+  graph.offsets = ReadTextVectorU32(input, graph.n + 1, "offsets");
   graph.to = ReadTextVectorU32(input, graph.m, "to");
   graph.length = ReadTextVectorFloat(input, graph.m, "length");
   ValidateCsr(graph);
@@ -214,7 +233,7 @@ GraphData ReadGraphBinary(const std::string& path) {
     throw std::runtime_error("Could not read N and M from binary input.");
   }
 
-  graph.offsets = ReadBinaryVectorU32(input, graph.n, "offsets");
+  graph.offsets = ReadBinaryVectorU32(input, graph.n + 1, "offsets");
   graph.to = ReadBinaryVectorU32(input, graph.m, "to");
   graph.length = ReadBinaryVectorFloat(input, graph.m, "length");
   ValidateCsr(graph);
@@ -290,6 +309,14 @@ void ValidatePartition(const PartitionData& partition, const uint32_t n) {
         }
     }
 }
+bool read_flag(const std::vector<uint32_t>& arc_flags, uint32_t edge_id, uint32_t region, uint32_t region_count) {
+    const uint32_t W = (region_count + 31)/32;
+    uint32_t word = region >> 5;
+    
+    uint32_t bit = region & 31;
+
+    return (arc_flags[edge_id * W + word] >> (31 - bit)) & 1u;
+} 
 
 
 }  // namespace arcflags

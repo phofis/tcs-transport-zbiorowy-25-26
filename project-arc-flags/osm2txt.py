@@ -182,7 +182,7 @@ def write_text(path: Path, n: int, m: int, offsets: Sequence[int], to: Sequence[
 def write_bin(path: Path, n: int, m: int, offsets: Sequence[int], to: Sequence[int], length: Sequence[float]) -> None:
     with path.open("wb") as handle:
         handle.write(struct.pack("<II", n, m))
-        handle.write(struct.pack(f"<{n}I", *offsets))
+        handle.write(struct.pack(f"<{n + 1}I", *offsets))
         handle.write(struct.pack(f"<{m}I", *to))
         handle.write(struct.pack(f"<{m}f", *length))
 

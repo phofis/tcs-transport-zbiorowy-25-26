@@ -9,16 +9,7 @@
 #include <cmath>
 namespace arcflags {
 
-struct State {
-    uint32_t v;
-    float dist;
 
-};
-struct StateComp {
-    bool operator()(const State& a, const State& b) const {
-        return a.dist > b.dist;
-    }
-};
 
 std::vector<uint32_t> findBoundaryVertices(
     const GraphData& graph,
@@ -120,14 +111,7 @@ void set_flag(std::vector<uint32_t>& arc_flags, uint32_t edge_id, uint32_t regio
     uint32_t bit = region & 31;
     arc_flags[edge_id * W + word] |= (1u<< (31-bit));
 }
-bool read_flag(const std::vector<uint32_t>& arc_flags, uint32_t edge_id, uint32_t region, uint32_t region_count) {
-    const uint32_t W = (region_count + 31)/32;
-    uint32_t word = region >> 5;
-    
-    uint32_t bit = region & 31;
 
-    return (arc_flags[edge_id * W + word] >> (31 - bit)) & 1u;
-} 
 // dwie wersje: 1 - dijkstra z kazdej krawędzi 2- multi source dijkstra z kazdego 
 std::vector<uint32_t> arcFlagsPreprocessing(const GraphData& graph, const PartitionData& partition) {
     const uint32_t N = graph.n;
@@ -148,21 +132,25 @@ std::vector<uint32_t> arcFlagsPreprocessing(const GraphData& graph, const Partit
     GraphData graph_r = reverseGraph(graph, rev_edge_id);
 
     constexpr float INF = std::numeric_limits<float>::infinity();
-    constexpr float EPS = 1e-6;
+    constexpr float EPS = 1e-4f;
 
     std::vector<float> dist(N);
-
+    for(uint32_t e = 0 ; e < M ; ++e) {
+        uint32_t to = graph.to[e];
+        set_flag(arc_flags, e, partition.region[to], R);
+    }
     for (uint32_t r = 0; r < R; ++r) {
         
-        std::fill(dist.begin(), dist.end(), INF);
         
-        std::priority_queue<
-            State,
-            std::vector<State>,
-            StateComp
-        > pq;
         for (uint32_t i = boundary_offsets[r] ; i < boundary_offsets[r + 1]; ++i) {
             uint32_t s = boundary_vertices[i];
+            std::fill(dist.begin(), dist.end(), INF);
+        
+            std::priority_queue<
+                State,
+                std::vector<State>,
+                StateComp
+            > pq;
 
             dist[s] = 0.0f;
             pq.push({s, 0.0f});
