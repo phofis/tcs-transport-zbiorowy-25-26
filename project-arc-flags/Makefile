@@ -206,12 +206,12 @@ run-compare: generate-test test
 	@test -n "$(GRAPH_IN)" || (echo "GRAPH_IN is required" && exit 1)
 	mkdir -p "$(OUT_DIR)"
 	# generate queries (text format)
-	./$(GENERATE_BIN) --graph "$(GRAPH_IN)" --out "$(OUT_DIR)/queries.$(GRAPH_BASE).txt" --format bin $(if $(COUNT),--count $(COUNT),--count 1000)
+	./$(GENERATE_BIN) --graph "$(GRAPH_IN)" --out "$(OUT_DIR)/queries.txt" --format bin $(if $(COUNT),--count $(COUNT),--count 1000)
 
 	# run baseline dijkstra test
-	./$(TEST_BIN) --graph "$(GRAPH_IN)" --queries "$(OUT_DIR)/queries.$(GRAPH_BASE).txt" --out "$(OUT_DIR)/baseline.$(GRAPH_BASE).txt"
+	./$(TEST_BIN) --graph "$(GRAPH_IN)" --queries "$(OUT_DIR)/queries.txt" --out "$(OUT_DIR)/baseline.$(GRAPH_BASE).txt"
 	# run arcflags query
-	./$(QUERY_BIN) --graph "$(GRAPH_IN)" --partition "$(PARTITION_BIN_OUT)" --flags "$(FLAGS_BIN_OUT)" --queries "$(OUT_DIR)/queries.$(GRAPH_BASE).txt" --out "$(OUT_DIR)/arcflags.$(GRAPH_BASE).txt"
+	./$(QUERY_BIN) --graph "$(GRAPH_IN)" --partition "$(PARTITION_BIN_OUT)" --flags "$(FLAGS_BIN_OUT)" --queries "$(OUT_DIR)/queries.txt" --out "$(OUT_DIR)/arcflags.$(GRAPH_BASE).txt"
 	# compare
 	diff -u "$(OUT_DIR)/baseline.$(GRAPH_BASE).txt" "$(OUT_DIR)/arcflags.$(GRAPH_BASE).txt" || (echo "Outputs differ" && exit 2)
 	@echo "Outputs match"

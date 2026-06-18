@@ -40,7 +40,7 @@ struct PartitionData {
 
 struct State {
     uint32_t v;
-    float dist;
+    double dist;
 };
 
 struct StateComp {
