@@ -11,6 +11,8 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <math_constants.h>
+#include "utils.hpp"
 
 namespace arcflags {
 namespace {

@@ -2,6 +2,9 @@ CXX ?= g++
 CXXFLAGS ?= -O2 -std=c++17 -Wall -Wextra -pedantic
 LDFLAGS ?=
 
+NVCC ?= nvcc
+NVCCFLAGS ?= -O2 -std=c++17 -Xcompiler -Wall,-Wextra,-pedantic
+
 METIS_PREFIX ?= /usr/local
 METIS_INC ?= $(METIS_PREFIX)/include
 METIS_LIB ?= $(METIS_PREFIX)/lib
@@ -14,10 +17,12 @@ BIN_DIR := bin
 
 PARTITION_SRCS := $(SRC_DIR)/partition_main.cpp $(SRC_DIR)/utils.cpp
 PREPROCESS_SRCS := $(SRC_DIR)/preprocess.cpp $(SRC_DIR)/utils.cpp
+PREPROCESS_CUDA_SRC := $(SRC_DIR)/preprocess.cu
 QUERY_SRCS := $(SRC_DIR)/query.cpp $(SRC_DIR)/utils.cpp
 
 PARTITION_BIN := $(BIN_DIR)/partition
 PREPROCESS_BIN := $(BIN_DIR)/preprocess
+PREPROCESS_CUDA_BIN := $(BIN_DIR)/preprocess_cuda
 QUERY_BIN := $(BIN_DIR)/query
 
 PARTITION_CXXFLAGS := $(CXXFLAGS) \
@@ -32,7 +37,7 @@ PARTITION_LDFLAGS := $(LDFLAGS) \
 
 PREPROCESS_CXXFLAGS := $(CXXFLAGS)
 PREPROCESS_LDFLAGS := $(LDFLAGS)
-
+PREPROCESS_CUFLAGS := $(CUFLAGS) 
 QUERY_CXXFLAGS := $(CXXFLAGS)
 QUERY_LDFLAGS := $(LDFLAGS)
 
@@ -90,6 +95,14 @@ preprocess: $(PREPROCESS_BIN)
 
 $(PREPROCESS_BIN): $(PREPROCESS_SRCS) $(SRC_DIR)/utils.hpp Makefile | $(BIN_DIR)
 	$(CXX) $(PREPROCESS_CXXFLAGS) $(PREPROCESS_SRCS) -o $@ $(PREPROCESS_LDFLAGS)
+
+preprocess-cuda: $(PREPROCESS_CUDA_BIN)
+
+$(PREPROCESS_CUDA_BIN): $(PREPROCESS_CUDA_SRC) $(SRC_DIR)/utils.cpp $(SRC_DIR)/utils.hpp Makefile | $(BIN_DIR)
+	$(NVCC) $(NVCCFLAGS) \
+		$(PREPROCESS_CUDA_SRC) \
+		$(SRC_DIR)/utils.cpp \
+		-o $@ $(PREPROCESS_LDFLAGS)
 
 query: $(QUERY_BIN)
 
@@ -157,6 +170,22 @@ preprocess-txt: partition-txt preprocess
 		--partition "$(PARTITION_TXT_OUT)" \
 		--out "$(FLAGS_TXT_OUT)" \
 		--format txt
+preprocess-cuda-bin: partition-bin preprocess-cuda
+	@test -n "$(GRAPH_IN)" || (echo "GRAPH_IN is required" && exit 1)
+	mkdir -p "$(FLAGS_DIR)"
+	$(PREPROCESS_CUDA_BIN) \
+		--graph "$(GRAPH_IN)" \
+		--partition "$(PARTITION_BIN_OUT)" \
+		--out "$(FLAGS_BIN_OUT)" \
+		--format bin
+preprocess-cuda-txt: partition-txt preprocess-cuda
+	@test -n "$(GRAPH_IN)" || (echo "GRAPH_IN is required" && exit 1)
+	mkdir -p "$(FLAGS_DIR)"
+	$(PREPROCESS_CUDA_BIN) \
+		--graph "$(GRAPH_IN)" \
+		--partition "$(PARTITION_TXT_OUT)" \
+		--out "$(FLAGS_BIN_OUT)" \
+		--format txt
 
 #
 # QUERY EXECUTION
@@ -192,6 +221,10 @@ pipeline-bin: preprocess-bin query
 
 pipeline-txt: preprocess-txt query
 
+pipeline-cuda-bin: preprocess-cuda-bin query
+
+pipeline-cuda-txt: preprocess-cuda-txt query
+
 #
 # RUN ONLY
 #
@@ -201,6 +234,7 @@ run: run-bin
 run-bin: query-bin
 
 run-txt: query-txt
+
 
 run-compare: generate-test test
 	@test -n "$(GRAPH_IN)" || (echo "GRAPH_IN is required" && exit 1)
