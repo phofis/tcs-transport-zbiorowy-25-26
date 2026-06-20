@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <limits>
 #include <stdexcept>
 #include <string>
@@ -117,95 +118,172 @@ void set_flag(std::vector<uint32_t>& arc_flags, uint32_t edge_id, uint32_t regio
   arc_flags[edge_id * words_per_edge + word] |= (1u << (31u - bit));
 }
 
-__global__ void reverseDijkstraKernel(const uint32_t* offsets,
-                                      const uint32_t* to,
-                                      const float* length,
-                                      uint32_t n,
-                                      uint32_t source,
-                                      float* dist,
-                                      unsigned char* visited) {
-  if (blockIdx.x != 0 || threadIdx.x != 0) {
-    return;
-  }
+struct RelaxUpdate {
+  uint32_t vertex;
+  uint32_t bucket;
+};
 
-  const float INF = CUDART_INF_F;
-  for (uint32_t v = 0; v < n; ++v) {
-    dist[v] = INF;
-    visited[v] = 0;
-  }
+struct GPUDeltaSteppingState {
+  uint32_t* frontier_queue;
+  uint32_t* frontier_tail;
+  uint32_t current_bucket;
+  uint32_t max_bucket;
+  bool finished;
+};
 
-  dist[source] = 0.0f;
+__device__ float atomicMinFloat(float* address, float value) {
+  int* address_as_int = reinterpret_cast<int*>(address);
+  int old = *address_as_int;
 
-  for (uint32_t iter = 0; iter < n; ++iter) {
-    uint32_t best_v = n;
-    float best_dist = INF;
-
-    for (uint32_t v = 0; v < n; ++v) {
-      if (!visited[v] && dist[v] < best_dist) {
-        best_dist = dist[v];
-        best_v = v;
-      }
-    }
-
-    if (best_v == n || best_dist == INF) {
+  while (__int_as_float(old) > value) {
+    const int assumed = old;
+    old = atomicCAS(address_as_int, assumed, __float_as_int(value));
+    if (old == assumed) {
       break;
     }
-
-    visited[best_v] = 1;
-
-    for (uint32_t e = offsets[best_v]; e < offsets[best_v + 1]; ++e) {
-      const uint32_t next = to[e];
-      const float candidate = best_dist + length[e];
-      if (candidate < dist[next]) {
-        dist[next] = candidate;
-      }
-    }
   }
+
+  return __int_as_float(old);
 }
 
-__global__ void markFlagsKernel(const uint32_t* offsets,
-                                const uint32_t* to,
-                                const float* length,
-                                const uint32_t* rev_edge_id,
-                                const float* dist,
-                                uint32_t n,
-                                uint32_t region,
-                                uint32_t region_count,
-                                uint32_t* arc_flags) {
-  if (blockIdx.x != 0 || threadIdx.x != 0) {
+__global__ void initSingleSourceKernel(float* dist, uint32_t n, uint32_t source) {
+  const uint32_t v = blockIdx.x * blockDim.x + threadIdx.x;
+  if (v >= n) {
     return;
   }
 
-  const uint32_t words_per_edge = (region_count + 31) / 32;
-  const uint32_t word = region >> 5;
-  const uint32_t mask = 1u << (31u - (region & 31u));
-  const float eps = 1e-6f;
-
-  for (uint32_t v = 0; v < n; ++v) {
-    if (isinf(dist[v])) {
-      continue;
-    }
-
-    for (uint32_t e = offsets[v]; e < offsets[v + 1]; ++e) {
-      const uint32_t next = to[e];
-      if (isinf(dist[next])) {
-        continue;
-      }
-
-      const float candidate = dist[v] + length[e];
-      if (fabsf(dist[next] - candidate) <= eps) {
-        const uint32_t original_edge = rev_edge_id[e];
-        arc_flags[original_edge * words_per_edge + word] |= mask;
-      }
-    }
+  dist[v] = CUDART_INF_F;
+  if (v == source) {
+    dist[v] = 0.0f;
   }
 }
+
+__global__ void deltaSteppingPersistentKernel(
+    const uint32_t* rev_offsets,
+    const uint32_t* rev_to,
+    const float* rev_length,
+    uint32_t n,
+    uint32_t source,
+    float delta,
+    float* dist,
+    uint32_t* frontier_queue,
+    uint32_t* frontier_tail,
+    uint32_t queue_capacity,
+    bool* d_finished) {
+  const uint32_t thread_id = threadIdx.x;
+  __shared__ uint32_t shared_bucket;
+  __shared__ uint32_t shared_queue_start;
+  __shared__ uint32_t shared_queue_end;
+  __shared__ bool shared_finished;
+
+  if (thread_id == 0) {
+    shared_bucket = 0;
+    shared_queue_start = 1;
+    shared_queue_end = 1;
+    shared_finished = false;
+  }
+  __syncthreads();
+
+  while (!shared_finished) {
+    __syncthreads();
+
+    const uint32_t queue_start = shared_queue_start;
+    const uint32_t queue_end = shared_queue_end;
+
+    if (queue_start < queue_end) {
+      for (uint32_t idx = queue_start + thread_id; idx < queue_end; idx += blockDim.x) {
+        if (idx >= queue_capacity) continue;
+        
+        const uint32_t u = frontier_queue[idx];
+        if (u >= n) continue;
+        
+        const float du = dist[u];
+        if (!isfinite(du)) continue;
+
+        for (uint32_t e = rev_offsets[u]; e < rev_offsets[u + 1]; ++e) {
+          const float w = rev_length[e];
+          if (w > delta) continue;
+
+          const uint32_t v = rev_to[e];
+          if (v >= n) continue;
+          
+          const float candidate = du + w;
+          const float previous = atomicMinFloat(&dist[v], candidate);
+          if (candidate < previous) {
+            const uint32_t next_bucket = static_cast<uint32_t>(floorf(candidate / delta));
+            if (next_bucket == shared_bucket) {
+              const uint32_t slot = atomicAdd(frontier_tail, 1u);
+              if (slot < queue_capacity) {
+                frontier_queue[slot] = v;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    __syncthreads();
+
+    if (thread_id == 0) {
+      const uint32_t new_queue_end = *frontier_tail;
+      if (new_queue_end == queue_end) {
+        shared_finished = true;
+        *d_finished = true;
+      } else {
+        shared_bucket++;
+        shared_queue_start = queue_end;
+        shared_queue_end = new_queue_end;
+      }
+    }
+    __syncthreads();
+  }
+}
+
+__global__ void markFlagsKernel(
+    const uint32_t* rev_edge_id,
+    const uint32_t* to,
+    const uint32_t* rev_to,
+    const float* rev_length,
+    const float* dist,
+    uint32_t m,
+    uint32_t region,
+    uint32_t region_count,
+    uint32_t* arc_flags
+) {
+    uint32_t rev_e = blockIdx.x * blockDim.x + threadIdx.x;
+    if (rev_e >= m) return;
+
+    uint32_t e = rev_edge_id[rev_e];
+
+    uint32_t u = to[e];
+    uint32_t v = rev_to[rev_e];
+
+    float w = rev_length[rev_e];
+
+    float du = dist[u];
+    float dv = dist[v];
+
+    if (!isfinite(du) || !isfinite(dv)) return;
+
+    float candidate = du + w;
+    const float eps = (1e-7f * fabsf(candidate) > 1e-6f) ? (1e-7f * fabsf(candidate)) : 1e-6f;
+
+    if (fabsf(dv - candidate) <= eps) {
+        uint32_t words_per_edge = (region_count + 31) / 32;
+        uint32_t word = region >> 5;
+        uint32_t mask = 1u << (31u - (region & 31u));
+
+        atomicOr(&arc_flags[e * words_per_edge + word], mask);
+    }
+}
+
 
 std::vector<uint32_t> arcFlagsPreprocessingCuda(const GraphData& graph, const PartitionData& partition) {
   const uint32_t n = graph.n;
   const uint32_t m = graph.m;
   const uint32_t regions_count = partition.regions_count;
   const uint32_t words_per_edge = (regions_count + 31) / 32;
+  constexpr float delta = 5.0f;
 
   std::vector<uint32_t> arc_flags(m * words_per_edge, 0);
   for (uint32_t e = 0; e < m; ++e) {
@@ -218,41 +296,79 @@ std::vector<uint32_t> arcFlagsPreprocessingCuda(const GraphData& graph, const Pa
   std::vector<uint32_t> boundary_offsets;
   std::vector<uint32_t> boundary_vertices = findBoundaryVertices(graph, graph_r, partition, boundary_offsets);
 
-  uint32_t* d_offsets = nullptr;
-  uint32_t* d_to = nullptr;
-  float* d_length = nullptr;
+  uint32_t* d_rev_offsets = nullptr;
+  
+  uint32_t* d_rev_to = nullptr;
+  float* d_rev_length = nullptr;
   uint32_t* d_rev_edge_id = nullptr;
+  uint32_t* d_to = nullptr;
   float* d_dist = nullptr;
-  unsigned char* d_visited = nullptr;
+  RelaxUpdate* d_updates = nullptr;
+  uint32_t* d_update_count = nullptr;
+  uint32_t* d_frontier = nullptr;
+  uint32_t* d_frontier_queue = nullptr;
+  uint32_t* d_frontier_tail = nullptr;
+  bool* d_finished = nullptr;
   uint32_t* d_arc_flags = nullptr;
 
-  CheckCuda(cudaMalloc(reinterpret_cast<void**>(&d_offsets), graph_r.offsets.size() * sizeof(uint32_t)), "cudaMalloc offsets");
-  CheckCuda(cudaMalloc(reinterpret_cast<void**>(&d_to), graph_r.to.size() * sizeof(uint32_t)), "cudaMalloc to");
-  CheckCuda(cudaMalloc(reinterpret_cast<void**>(&d_length), graph_r.length.size() * sizeof(float)), "cudaMalloc length");
+  CheckCuda(cudaMalloc(reinterpret_cast<void**>(&d_rev_offsets), graph_r.offsets.size() * sizeof(uint32_t)), "cudaMalloc offsets");
+  CheckCuda(cudaMalloc(reinterpret_cast<void**>(&d_rev_to), graph_r.to.size() * sizeof(uint32_t)), "cudaMalloc to");
+  CheckCuda(cudaMalloc(reinterpret_cast<void**>(&d_rev_length), graph_r.length.size() * sizeof(float)), "cudaMalloc length");
   CheckCuda(cudaMalloc(reinterpret_cast<void**>(&d_rev_edge_id), rev_edge_id.size() * sizeof(uint32_t)), "cudaMalloc rev_edge_id");
+  CheckCuda(cudaMalloc(reinterpret_cast<void**>(&d_to), graph.to.size() * sizeof(uint32_t)), "cudaMalloc to");
   CheckCuda(cudaMalloc(reinterpret_cast<void**>(&d_dist), n * sizeof(float)), "cudaMalloc dist");
-  CheckCuda(cudaMalloc(reinterpret_cast<void**>(&d_visited), n * sizeof(unsigned char)), "cudaMalloc visited");
+  CheckCuda(cudaMalloc(reinterpret_cast<void**>(&d_updates), m * sizeof(RelaxUpdate)), "cudaMalloc updates");
+  CheckCuda(cudaMalloc(reinterpret_cast<void**>(&d_update_count), sizeof(uint32_t)), "cudaMalloc update_count");
+  CheckCuda(cudaMalloc(reinterpret_cast<void**>(&d_frontier), n * sizeof(uint32_t)), "cudaMalloc frontier");
+  CheckCuda(cudaMalloc(reinterpret_cast<void**>(&d_frontier_queue), n * sizeof(uint32_t)), "cudaMalloc frontier_queue");
+  CheckCuda(cudaMalloc(reinterpret_cast<void**>(&d_frontier_tail), sizeof(uint32_t)), "cudaMalloc frontier_tail");
+  CheckCuda(cudaMalloc(reinterpret_cast<void**>(&d_finished), sizeof(bool)), "cudaMalloc finished");
   CheckCuda(cudaMalloc(reinterpret_cast<void**>(&d_arc_flags), arc_flags.size() * sizeof(uint32_t)), "cudaMalloc arc_flags");
 
-  CheckCuda(cudaMemcpy(d_offsets, graph_r.offsets.data(), graph_r.offsets.size() * sizeof(uint32_t), cudaMemcpyHostToDevice),
+  CheckCuda(cudaMemcpy(d_rev_offsets, graph_r.offsets.data(), graph_r.offsets.size() * sizeof(uint32_t), cudaMemcpyHostToDevice),
             "cudaMemcpy offsets");
-  CheckCuda(cudaMemcpy(d_to, graph_r.to.data(), graph_r.to.size() * sizeof(uint32_t), cudaMemcpyHostToDevice),
+  CheckCuda(cudaMemcpy(d_rev_to, graph_r.to.data(), graph_r.to.size() * sizeof(uint32_t), cudaMemcpyHostToDevice),
             "cudaMemcpy to");
-  CheckCuda(cudaMemcpy(d_length, graph_r.length.data(), graph_r.length.size() * sizeof(float), cudaMemcpyHostToDevice),
+  CheckCuda(cudaMemcpy(d_rev_length, graph_r.length.data(), graph_r.length.size() * sizeof(float), cudaMemcpyHostToDevice),
             "cudaMemcpy length");
   CheckCuda(cudaMemcpy(d_rev_edge_id, rev_edge_id.data(), rev_edge_id.size() * sizeof(uint32_t), cudaMemcpyHostToDevice),
             "cudaMemcpy rev_edge_id");
+  CheckCuda(cudaMemcpy(d_to, graph.to.data(), graph.to.size() * sizeof(uint32_t), cudaMemcpyHostToDevice),
+            "cudaMemcpy to");
   CheckCuda(cudaMemcpy(d_arc_flags, arc_flags.data(), arc_flags.size() * sizeof(uint32_t), cudaMemcpyHostToDevice),
-            "cudaMemcpy arc_flags");
+              "cudaMemcpy arc_flags");
+
+  std::vector<uint32_t> frontier_queue(n);
 
   for (uint32_t source : boundary_vertices) {
     const uint32_t region = partition.region[source];
 
-    reverseDijkstraKernel<<<1, 1>>>(d_offsets, d_to, d_length, n, source, d_dist, d_visited);
-    CheckCuda(cudaGetLastError(), "reverseDijkstraKernel launch");
-    CheckCuda(cudaDeviceSynchronize(), "reverseDijkstraKernel sync");
+    const uint32_t init_blocks = (n + 255) / 256;
+    initSingleSourceKernel<<<init_blocks, 256>>>(d_dist, n, source);
+    CheckCuda(cudaGetLastError(), "initSingleSourceKernel launch");
+    CheckCuda(cudaDeviceSynchronize(), "initSingleSourceKernel sync");
 
-    markFlagsKernel<<<1, 1>>>(d_offsets, d_to, d_length, d_rev_edge_id, d_dist, n, region, regions_count, d_arc_flags);
+    frontier_queue[0] = source;
+    CheckCuda(cudaMemcpy(d_frontier_queue, frontier_queue.data(), sizeof(uint32_t), cudaMemcpyHostToDevice),
+              "cudaMemcpy initial frontier");
+    CheckCuda(cudaMemset(d_frontier_tail, 1, sizeof(uint32_t)), "cudaMemset frontier_tail to 1");
+    CheckCuda(cudaMemset(d_finished, 0, sizeof(bool)), "cudaMemset finished to false");
+
+    deltaSteppingPersistentKernel<<<1, 256>>>(d_rev_offsets,
+                                              d_rev_to,
+                                              d_rev_length,
+                                              n,
+                                              source,
+                                              delta,
+                                              d_dist,
+                                              d_frontier_queue,
+                                              d_frontier_tail,
+                                              n,
+                                              d_finished);
+    CheckCuda(cudaGetLastError(), "deltaSteppingPersistentKernel launch");
+    CheckCuda(cudaDeviceSynchronize(), "deltaSteppingPersistentKernel sync");
+
+    markFlagsKernel<<<(m + 255) / 256, 256>>>(d_rev_edge_id, d_to, d_rev_to, d_rev_length, d_dist, m, region, regions_count, d_arc_flags);
     CheckCuda(cudaGetLastError(), "markFlagsKernel launch");
     CheckCuda(cudaDeviceSynchronize(), "markFlagsKernel sync");
   }
@@ -260,12 +376,18 @@ std::vector<uint32_t> arcFlagsPreprocessingCuda(const GraphData& graph, const Pa
   CheckCuda(cudaMemcpy(arc_flags.data(), d_arc_flags, arc_flags.size() * sizeof(uint32_t), cudaMemcpyDeviceToHost),
             "cudaMemcpy arc_flags back");
 
-  cudaFree(d_offsets);
-  cudaFree(d_to);
-  cudaFree(d_length);
+  cudaFree(d_rev_offsets);
+  cudaFree(d_rev_to);
+  cudaFree(d_rev_length);
   cudaFree(d_rev_edge_id);
+  cudaFree(d_to);
   cudaFree(d_dist);
-  cudaFree(d_visited);
+  cudaFree(d_updates);
+  cudaFree(d_update_count);
+  cudaFree(d_frontier);
+  cudaFree(d_frontier_queue);
+  cudaFree(d_frontier_tail);
+  cudaFree(d_finished);
   cudaFree(d_arc_flags);
 
   return arc_flags;

@@ -3,7 +3,7 @@ CXXFLAGS ?= -O2 -std=c++17 -Wall -Wextra -pedantic
 LDFLAGS ?=
 
 NVCC ?= nvcc
-NVCCFLAGS ?= -O2 -std=c++17 -Xcompiler -Wall,-Wextra,-pedantic
+NVCCFLAGS ?= -O2 -std=c++17 -ccbin g++ -arch sm_61
 
 METIS_PREFIX ?= /usr/local
 METIS_INC ?= $(METIS_PREFIX)/include

@@ -158,10 +158,10 @@ namespace arcflags
         std::vector<uint32_t> boundary_vertices =
             findBoundaryVertices(graph, graph_r, partition, boundary_offsets);
 
-        constexpr double INF = std::numeric_limits<double>::infinity();
-        constexpr double EPS = 1e-6;
+        constexpr float INF = std::numeric_limits<float>::infinity();
+        constexpr float EPS = 1e-6;
 
-        std::vector<double> dist(N);
+        std::vector<float> dist(N);
         for (uint32_t e = 0; e < M; ++e)
         {
             uint32_t to = graph.to[e];
@@ -172,7 +172,9 @@ namespace arcflags
 
             for (uint32_t i = boundary_offsets[r]; i < boundary_offsets[r + 1]; ++i)
             {
+                
                 uint32_t s = boundary_vertices[i];
+                std::cout<<"Processing source vertex " << s << " in region " << r << '\n';
                 std::fill(dist.begin(), dist.end(), INF);
 
                 std::priority_queue<
@@ -197,7 +199,7 @@ namespace arcflags
                     for (uint32_t e = graph_r.offsets[cur.v]; e < graph_r.offsets[cur.v + 1]; ++e)
                     {
                         uint32_t to = graph_r.to[e];
-                        double nd = cur.dist + graph_r.length[e];
+                        float    nd = cur.dist + graph_r.length[e];
                         if (nd < dist[to] - EPS)
                         {
                             dist[to] = nd;
@@ -228,7 +230,6 @@ namespace arcflags
     }
 
 } // namespace arcflags
-
 int main(int argc, char *argv[])
 {
     try
@@ -242,7 +243,6 @@ int main(int argc, char *argv[])
         const arcflags::GraphData graph = arcflags::ReadGraph(options);
         const arcflags::PartitionData partition = arcflags::ReadPartition(options, graph.n);
         const std::vector<uint32_t> arcFlags = arcflags::arcFlagsPreprocessing(graph, partition);
-
         const std::filesystem::path out_path(options.output_path);
         if (out_path.has_parent_path())
         {

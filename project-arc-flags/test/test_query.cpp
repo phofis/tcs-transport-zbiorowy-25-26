@@ -10,9 +10,9 @@
 #include <utility>
 #include <cmath>
 
-double query(uint32_t source, uint32_t target, const arcflags::GraphData& graph) {
-    const double INF = std::numeric_limits<double>::infinity();
-    std::vector<double> dist(graph.n, INF);
+float query(uint32_t source, uint32_t target, const arcflags::GraphData& graph) {
+    const float INF = std::numeric_limits<float>::infinity();
+    std::vector<float> dist(graph.n, INF);
 
     std::priority_queue<
         arcflags::State,
@@ -22,7 +22,7 @@ double query(uint32_t source, uint32_t target, const arcflags::GraphData& graph)
 
     dist[source] = 0.0;
     pq.push({source, 0.0});
-    const double EPS = 1e-6;
+    const float EPS = 1e-6;
     while (!pq.empty()) {
 
         arcflags::State cur = pq.top();
@@ -39,7 +39,7 @@ double query(uint32_t source, uint32_t target, const arcflags::GraphData& graph)
              ++e)
         {
             uint32_t to = graph.to[e];
-            double nd = cur.dist + graph.length[e];
+            float nd = cur.dist + graph.length[e];
             if (nd < dist[to] - EPS) {
                 dist[to] = nd;
                 pq.push({to, nd});
@@ -84,7 +84,7 @@ int main(int argc, char** argv) {
             if (!(input >> source >> target)) {
                 throw std::runtime_error("Could not read query pair from input.");
             }
-            double  dist = query(source, target, graph);
+            float dist = query(source, target, graph);
             output << dist << "\n";
         }
 

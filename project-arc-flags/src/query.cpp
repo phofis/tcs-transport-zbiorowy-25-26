@@ -19,11 +19,11 @@ std::vector<uint32_t> readArcFlags(arcflags::CliOptions options, uint32_t len) {
     }
     return flags;
 }
-double query(uint32_t source, uint32_t target, arcflags::PartitionData& partition, std::vector<uint32_t>& flags, arcflags::GraphData& graph) {
-    const double INF = std::numeric_limits<double>::infinity();
+float query(uint32_t source, uint32_t target, arcflags::PartitionData& partition, std::vector<uint32_t>& flags, arcflags::GraphData& graph) {
+    const float INF = std::numeric_limits<float>::infinity();
     const uint32_t target_region = partition.region[target];
-    const double EPS = 1e-6;
-    std::vector<double> dist(graph.n, INF);
+    const float EPS = 1e-6;
+    std::vector<float> dist(graph.n, INF);
 
     std::priority_queue<
         arcflags::State,
@@ -59,7 +59,7 @@ double query(uint32_t source, uint32_t target, arcflags::PartitionData& partitio
             }
 
             uint32_t to = graph.to[e];
-            double nd = cur.dist + graph.length[e];
+            float nd = cur.dist + graph.length[e];
 
             if (nd < dist[to] - EPS) {
                 dist[to] = nd;
@@ -108,7 +108,7 @@ int main(int argc, char** argv) {
     while(query_count--) {
         uint32_t source, target;
         input>>source>>target;
-        double dist = query(source, target, partition ,arcFlags, graph);
+        float dist = query(source, target, partition ,arcFlags, graph);
         output<<dist<<"\n";
     }
 
