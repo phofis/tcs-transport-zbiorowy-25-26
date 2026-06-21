@@ -1,8 +1,10 @@
 #include <fstream>
 #include "utils.hpp"
+#include "preprocess_utils.hpp"
 #include <iostream>
 #include <filesystem>
 #include <queue>
+
 std::vector<uint32_t> readArcFlags(arcflags::CliOptions options, uint32_t len) {
 
     std::filesystem::path flags_path(options.flags_path);

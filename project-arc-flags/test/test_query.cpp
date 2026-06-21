@@ -1,4 +1,5 @@
 #include "utils.hpp"
+#include "preprocess_utils.hpp"
 #include <limits>
 #include <queue>
 #include <iostream>
@@ -91,6 +92,6 @@ int main(int argc, char** argv) {
         return 0;
     } catch (const std::exception& ex) {
         std::cerr << "test_query: " << ex.what() << '\n';
-        return 1;
+        return 1;git
     }
 }

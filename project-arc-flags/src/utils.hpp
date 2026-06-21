@@ -38,16 +38,7 @@ struct PartitionData {
     std::vector<uint32_t> region;
 };
 
-struct State {
-    uint32_t v;
-    double dist;
-};
 
-struct StateComp {
-    bool operator()(const State& a, const State& b) const {
-        return a.dist > b.dist;
-    }  
-};
 
 CliOptions ParseCliArgs(int argc, char** argv);
 const char* EncodingName(Encoding encoding);
@@ -72,5 +63,5 @@ void WriteTextVector(std::ostream& output, const std::vector<uint32_t>& values);
 void WriteTextVector(std::ostream& output, const std::vector<float>& values);
 void WriteBinaryVector(std::ostream& output, const std::vector<uint32_t>& values);
 void WriteBinaryVector(std::ostream& output, const std::vector<float>& values);
-bool read_flag(const std::vector<uint32_t>& arc_flags, uint32_t edge_id, uint32_t region, uint32_t region_count);
+
 }  // namespace arcflags
