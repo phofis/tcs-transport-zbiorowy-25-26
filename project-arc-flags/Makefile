@@ -16,13 +16,15 @@ SRC_DIR := src
 BIN_DIR := bin
 
 PARTITION_SRCS := $(SRC_DIR)/partition_main.cpp $(SRC_DIR)/utils.cpp
-PREPROCESS_SRCS := $(SRC_DIR)/preprocess.cpp $(SRC_DIR)/utils.cpp
+PREPROCESS_SRCS := $(SRC_DIR)/preprocess.cpp $(SRC_DIR)/preprocess_utils.cpp $(SRC_DIR)/utils.cpp
 PREPROCESS_CUDA_SRC := $(SRC_DIR)/preprocess.cu
+PREPROCESS_THREAD_SRCS := $(SRC_DIR)/preprocess_thread.cpp $(SRC_DIR)/preprocess_utils.cpp $(SRC_DIR)/utils.cpp
 QUERY_SRCS := $(SRC_DIR)/query.cpp $(SRC_DIR)/utils.cpp
 
 PARTITION_BIN := $(BIN_DIR)/partition
 PREPROCESS_BIN := $(BIN_DIR)/preprocess
 PREPROCESS_CUDA_BIN := $(BIN_DIR)/preprocess_cuda
+PREPROCESS_THREAD_BIN := $(BIN_DIR)/preprocess_thread
 QUERY_BIN := $(BIN_DIR)/query
 
 PARTITION_CXXFLAGS := $(CXXFLAGS) \
@@ -37,6 +39,8 @@ PARTITION_LDFLAGS := $(LDFLAGS) \
 
 PREPROCESS_CXXFLAGS := $(CXXFLAGS)
 PREPROCESS_LDFLAGS := $(LDFLAGS)
+PREPROCESS_THREAD_CXXFLAGS := $(CXXFLAGS) -fopenmp
+PREPROCESS_THREAD_LDFLAGS := $(LDFLAGS) -fopenmp
 PREPROCESS_CUFLAGS := $(CUFLAGS) 
 QUERY_CXXFLAGS := $(CXXFLAGS)
 QUERY_LDFLAGS := $(LDFLAGS)
@@ -69,13 +73,13 @@ QUERY_TXT_OUT := $(OUT_DIR)/query.$(GRAPH_BASE).txt
 
 .PHONY: \
 	all clean \
-	partition preprocess query test \
+	partition preprocess preprocess-thread preprocess-cuda query test \
 	generate-test \
 	partition-bin partition-txt \
-	preprocess-bin preprocess-txt \
+	preprocess-bin preprocess-txt preprocess-thread-bin preprocess-thread-txt preprocess-cuda-bin preprocess-cuda-txt \
 	query-bin query-txt \
-	pipeline-bin pipeline-txt \
-	run run-bin run-txt run-test
+	pipeline-bin pipeline-txt pipeline-cuda-bin pipeline-cuda-txt \
+	run run-bin run-txt run-test run-compare
 
 all: partition preprocess query
 
@@ -93,20 +97,26 @@ $(PARTITION_BIN): $(PARTITION_SRCS) $(SRC_DIR)/utils.hpp Makefile | $(BIN_DIR)
 
 preprocess: $(PREPROCESS_BIN)
 
-$(PREPROCESS_BIN): $(PREPROCESS_SRCS) $(SRC_DIR)/utils.hpp Makefile | $(BIN_DIR)
+$(PREPROCESS_BIN): $(PREPROCESS_SRCS) $(SRC_DIR)/utils.hpp $(SRC_DIR)/preprocess_utils.hpp Makefile | $(BIN_DIR)
 	$(CXX) $(PREPROCESS_CXXFLAGS) $(PREPROCESS_SRCS) -o $@ $(PREPROCESS_LDFLAGS)
+
+preprocess-thread: $(PREPROCESS_THREAD_BIN)
+
+$(PREPROCESS_THREAD_BIN): $(PREPROCESS_THREAD_SRCS) $(SRC_DIR)/utils.hpp $(SRC_DIR)/preprocess_utils.hpp Makefile | $(BIN_DIR)
+	$(CXX) $(PREPROCESS_THREAD_CXXFLAGS) $(PREPROCESS_THREAD_SRCS) -o $@ $(PREPROCESS_THREAD_LDFLAGS)
 
 preprocess-cuda: $(PREPROCESS_CUDA_BIN)
 
-$(PREPROCESS_CUDA_BIN): $(PREPROCESS_CUDA_SRC) $(SRC_DIR)/utils.cpp $(SRC_DIR)/utils.hpp Makefile | $(BIN_DIR)
+$(PREPROCESS_CUDA_BIN): $(PREPROCESS_CUDA_SRC)  $(SRC_DIR)/preprocess_utils.hpp $(SRC_DIR)/utils.hpp Makefile | $(BIN_DIR)
 	$(NVCC) $(NVCCFLAGS) \
 		$(PREPROCESS_CUDA_SRC) \
+		$(SRC_DIR)/preprocess_utils.cpp \
 		$(SRC_DIR)/utils.cpp \
 		-o $@ $(PREPROCESS_LDFLAGS)
 
 query: $(QUERY_BIN)
 
-$(QUERY_BIN): $(QUERY_SRCS) $(SRC_DIR)/utils.hpp Makefile | $(BIN_DIR)
+$(QUERY_BIN): $(QUERY_SRCS) $(SRC_DIR)/utils.hpp $(SRC_DIR)/preprocess_utils.hpp Makefile | $(BIN_DIR)
 	$(CXX) $(QUERY_CXXFLAGS) $(QUERY_SRCS) -o $@ $(QUERY_LDFLAGS)
 
 test: $(TEST_BIN)
@@ -170,6 +180,25 @@ preprocess-txt: partition-txt preprocess
 		--partition "$(PARTITION_TXT_OUT)" \
 		--out "$(FLAGS_TXT_OUT)" \
 		--format txt
+
+preprocess-thread-bin: partition-bin preprocess-thread
+	@test -n "$(GRAPH_IN)" || (echo "GRAPH_IN is required" && exit 1)
+	mkdir -p "$(FLAGS_DIR)"
+	$(PREPROCESS_THREAD_BIN) \
+		--graph "$(GRAPH_IN)" \
+		--partition "$(PARTITION_BIN_OUT)" \
+		--out "$(FLAGS_BIN_OUT)" \
+		--format bin
+
+preprocess-thread-txt: partition-txt preprocess-thread
+	@test -n "$(GRAPH_IN)" || (echo "GRAPH_IN is required" && exit 1)
+	mkdir -p "$(FLAGS_DIR)"
+	$(PREPROCESS_THREAD_BIN) \
+		--graph "$(GRAPH_IN)" \
+		--partition "$(PARTITION_TXT_OUT)" \
+		--out "$(FLAGS_TXT_OUT)" \
+		--format txt
+
 preprocess-cuda-bin: partition-bin preprocess-cuda
 	@test -n "$(GRAPH_IN)" || (echo "GRAPH_IN is required" && exit 1)
 	mkdir -p "$(FLAGS_DIR)"
@@ -220,6 +249,10 @@ query-txt:
 pipeline-bin: preprocess-bin query
 
 pipeline-txt: preprocess-txt query
+
+pipeline-thread-bin: preprocess-thread-bin query
+
+pipeline-thread-txt: preprocess-thread-txt query
 
 pipeline-cuda-bin: preprocess-cuda-bin query
 
