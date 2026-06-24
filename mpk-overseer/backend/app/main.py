@@ -2,7 +2,7 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -12,6 +12,8 @@ from app.departures import get_stop_departures
 from app.gtfs_fetcher import ensure_gtfs_feeds
 from app.gtfs_loader import GtfsData, load_gtfs
 from app.models import StopDeparturesOut, StopOut
+from app.vehicle_fetcher import vehicle_fetch_loop
+from app.websocket_vehicles import vehicles_websocket
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -49,8 +51,14 @@ async def lifespan(_: FastAPI):
     )
 
     regen_task = asyncio.create_task(_regen_loop())
+    vehicle_task = asyncio.create_task(vehicle_fetch_loop(gtfs_data))
     yield
+    vehicle_task.cancel()
     regen_task.cancel()
+    try:
+        await vehicle_task
+    except asyncio.CancelledError:
+        pass
     try:
         await regen_task
     except asyncio.CancelledError:
@@ -108,3 +116,8 @@ def stop_departures(stop_id: str) -> StopDeparturesOut:
     if stop_id not in gtfs_data.stops:
         raise HTTPException(status_code=404, detail=f"Stop {stop_id} not found")
     return get_stop_departures(connection_store, gtfs_data, stop_id)
+
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await vehicles_websocket(websocket)

@@ -12,3 +12,4 @@ Dodałem renderowanie przystanków oraz pobieranie danych GTFS przez backend.
 
 Dodałem renderowanie popupów, po kliknięciu w przystanek pojawia się jego tablica odjazdów
 
+Dodałem renderowanie pojazdów w czasie rzeczywistym. Strona działa zauważalnie wolniej, przeciąganie myszką po mapie ma opóźnienie, a do tego, sporo pojazdów 'skacze' po ekranie całkowicie zmieniając swoją pozycje (pokonanie tak dużych odcinków nie jest możliwe w rzeczywistości w tak krótkich odstępach czasu), jak narazie nie doszukałem się buga po swojej stronie, narazie zostawiam z połowicznym rozwiązaniem i nie animuję tych pojazdów jeśli przeniosły ponad X metrów w jednej aktualizacji. 

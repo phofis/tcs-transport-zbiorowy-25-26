@@ -20,21 +20,23 @@ function useStatusControl(
       return;
     }
 
-    const control = L.control({ position: "topleft" });
-    control.onAdd = () => {
-      const div = L.DomUtil.create("div");
-      div.style.cssText =
-        "padding: 6px 12px; font-size: 14px; border-radius: 4px; " +
-        "background: rgba(255,255,255,0.92); box-shadow: 0 1px 4px rgba(0,0,0,0.2);";
-      if (loadState === "error") {
-        div.style.color = "#b91c1c";
-        div.style.background = "#fef2f2";
-        div.textContent = errorMessage ?? "Backend niedostępny";
-      } else {
-        div.textContent = "Ładowanie przystanków…";
-      }
-      return div;
-    };
+    const StatusControl = L.Control.extend({
+      onAdd: () => {
+        const div = L.DomUtil.create("div");
+        div.style.cssText =
+          "padding: 6px 12px; font-size: 14px; border-radius: 4px; " +
+          "background: rgba(255,255,255,0.92); box-shadow: 0 1px 4px rgba(0,0,0,0.2);";
+        if (loadState === "error") {
+          div.style.color = "#b91c1c";
+          div.style.background = "#fef2f2";
+          div.textContent = errorMessage ?? "Backend niedostępny";
+        } else {
+          div.textContent = "Ładowanie przystanków…";
+        }
+        return div;
+      },
+    });
+    const control = new StatusControl({ position: "topleft" });
     control.addTo(map);
     return () => {
       control.remove();

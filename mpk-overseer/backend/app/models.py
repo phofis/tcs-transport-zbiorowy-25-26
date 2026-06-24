@@ -72,3 +72,13 @@ class StopDeparturesOut(BaseModel):
     stop_id: str
     generated_ts: int
     lines: list[LineDeparturesOut]
+
+
+class VehicleOut(BaseModel):
+    vehicle_id: str
+    route_id: str
+    line: str
+    lat: float
+    lng: float
+    bearing: float | None = None
+    timestamp: int
