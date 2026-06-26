@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { fetchStopDepartures } from "../lib/api";
 import { formatDepartureTime } from "../lib/formatDeparture";
 import type { StopDepartures } from "../types/departure";
+import { formatStopName } from "../lib/formatStopName";
 import type { Stop, StopKind } from "../types/stop";
 
 const KIND_BADGE_COLORS: Record<StopKind, string> = {
@@ -16,13 +17,6 @@ const KIND_LABELS: Record<StopKind, string> = {
   bus: "bus",
   mixed: "mixed",
 };
-
-function formatStopLabel(stop: Stop): string {
-  if (stop.platform) {
-    return `${stop.name} ${stop.platform}`;
-  }
-  return stop.name;
-}
 
 interface StopDeparturesPopupProps {
   stop: Stop;
@@ -68,7 +62,7 @@ export default function StopDeparturesPopup({ stop }: StopDeparturesPopupProps) 
   return (
     <div className="stop-departures-popup">
       <div className="stop-departures-popup__header">
-        <span className="stop-departures-popup__title">{formatStopLabel(stop)}</span>
+        <span className="stop-departures-popup__title">{formatStopName(stop)}</span>
         <span
           className="stop-departures-popup__kind"
           style={{ backgroundColor: KIND_BADGE_COLORS[stop.kind] }}

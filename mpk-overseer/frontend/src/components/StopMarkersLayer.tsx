@@ -2,17 +2,15 @@ import L from "leaflet";
 import { useCallback, useEffect, useState } from "react";
 import { useMap, useMapEvents } from "react-leaflet";
 
-import { fetchStopsWithRetry } from "../lib/api";
-import type { Stop } from "../types/stop";
+import { useApp } from "@/context/AppContext";
+import type { Stop } from "@/types/stop";
 import StopMarker from "./StopMarker";
 
 const MIN_STOP_ZOOM = 14;
 
-type LoadState = "loading" | "ready" | "error";
-
 function useStatusControl(
   map: L.Map,
-  loadState: LoadState,
+  loadState: "loading" | "ready" | "error",
   errorMessage: string | null,
 ) {
   useEffect(() => {
@@ -46,12 +44,10 @@ function useStatusControl(
 
 export default function StopMarkersLayer() {
   const map = useMap();
-  const [loadState, setLoadState] = useState<LoadState>("loading");
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [allStops, setAllStops] = useState<Stop[]>([]);
+  const { stops, stopsLoadState, stopsError } = useApp();
   const [visibleStops, setVisibleStops] = useState<Stop[]>([]);
 
-  useStatusControl(map, loadState, errorMessage);
+  useStatusControl(map, stopsLoadState, stopsError);
 
   const updateVisibleStops = useCallback(() => {
     if (map.getZoom() < MIN_STOP_ZOOM) {
@@ -60,39 +56,12 @@ export default function StopMarkersLayer() {
     }
 
     const bounds = map.getBounds();
-    setVisibleStops(
-      allStops.filter((stop) => bounds.contains([stop.lat, stop.lng])),
-    );
-  }, [allStops, map]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    fetchStopsWithRetry()
-      .then((stops) => {
-        if (!cancelled) {
-          setAllStops(stops);
-          setLoadState("ready");
-          setErrorMessage(null);
-        }
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) {
-          setLoadState("error");
-          setErrorMessage(
-            error instanceof Error ? error.message : "Nie udało się załadować przystanków",
-          );
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    setVisibleStops(stops.filter((stop) => bounds.contains([stop.lat, stop.lng])));
+  }, [stops, map]);
 
   useEffect(() => {
     updateVisibleStops();
-  }, [allStops, updateVisibleStops]);
+  }, [stops, updateVisibleStops]);
 
   useMapEvents({
     moveend: updateVisibleStops,

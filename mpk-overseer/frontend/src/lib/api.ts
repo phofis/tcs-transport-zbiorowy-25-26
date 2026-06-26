@@ -1,4 +1,5 @@
 import type { StopDepartures } from "../types/departure";
+import type { RouteRequest, RouteResponse } from "../types/route";
 import type { Stop } from "../types/stop";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
@@ -52,6 +53,23 @@ export async function fetchStopDepartures(stopId: string): Promise<StopDeparture
   const res = await fetch(`${API_URL}/api/stops/${encodeURIComponent(stopId)}/departures`);
   if (!res.ok) {
     throw new Error(`Failed to fetch departures: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function fetchRoute(request: RouteRequest): Promise<RouteResponse> {
+  const res = await fetch(`${API_URL}/api/route`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    const message =
+      typeof detail === "object" && detail !== null && "detail" in detail
+        ? String((detail as { detail: unknown }).detail)
+        : `Failed to fetch route: ${res.status}`;
+    throw new Error(message);
   }
   return res.json();
 }

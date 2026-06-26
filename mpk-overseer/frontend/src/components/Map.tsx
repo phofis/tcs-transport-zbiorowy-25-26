@@ -1,6 +1,7 @@
 import { MapContainer, TileLayer } from "react-leaflet";
 
 import StopMarkersLayer from "./StopMarkersLayer";
+import StartEndMarkers, { MapPickHandler, RouteLayer } from "./StartEndMarkers";
 import VehicleMarkersLayer from "./VehicleMarkersLayer";
 
 const KRAKOW_CENTER: [number, number] = [50.0647, 19.945];
@@ -19,6 +20,9 @@ export default function Map() {
       />
       <VehicleMarkersLayer />
       <StopMarkersLayer />
+      <StartEndMarkers />
+      <RouteLayer />
+      <MapPickHandler />
     </MapContainer>
   );
 }

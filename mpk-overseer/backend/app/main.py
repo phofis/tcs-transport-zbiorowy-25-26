@@ -1,17 +1,20 @@
 import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.blocks import REGEN_INTERVAL, ConnectionStore, build_initial_store, regenerate_store
+from app.blocks import GRACE, HORIZON, REGEN_INTERVAL, ConnectionStore, build_initial_store, regenerate_store
 from app.config import CORS_ORIGINS
+from app.csa import find_route
 from app.departures import get_stop_departures
+from app.footpaths import FootpathMap, load_footpaths
 from app.gtfs_fetcher import ensure_gtfs_feeds
 from app.gtfs_loader import GtfsData, load_gtfs
-from app.models import StopDeparturesOut, StopOut
+from app.models import RouteRequest, RouteResponse, StopDeparturesOut, StopOut
 from app.vehicle_fetcher import vehicle_fetch_loop
 from app.websocket_vehicles import vehicles_websocket
 
@@ -20,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 gtfs_data: GtfsData | None = None
 connection_store: ConnectionStore | None = None
+footpaths_data: FootpathMap | None = None
 
 
 async def _regen_loop() -> None:
@@ -33,13 +37,15 @@ async def _regen_loop() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    global gtfs_data, connection_store
+    global gtfs_data, connection_store, footpaths_data
     feed_paths = await ensure_gtfs_feeds()
     gtfs_data = await asyncio.to_thread(
         load_gtfs,
         [str(path) for path in feed_paths],
     )
     logger.info("Loaded %d stops from GTFS", len(gtfs_data.stops))
+
+    footpaths_data = await asyncio.to_thread(load_footpaths)
 
     connection_store = await asyncio.to_thread(build_initial_store, gtfs_data)
     block_count = len(connection_store.snapshot())
@@ -116,6 +122,30 @@ def stop_departures(stop_id: str) -> StopDeparturesOut:
     if stop_id not in gtfs_data.stops:
         raise HTTPException(status_code=404, detail=f"Stop {stop_id} not found")
     return get_stop_departures(connection_store, gtfs_data, stop_id)
+
+
+@app.post("/api/route", response_model=RouteResponse)
+def route_search(request: RouteRequest) -> RouteResponse:
+    assert gtfs_data is not None
+    assert connection_store is not None
+    assert footpaths_data is not None
+
+    now = int(time.time())
+    if request.departure_ts < now - GRACE or request.departure_ts > now + HORIZON:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"departure_ts must be within the connection window "
+                f"[{now - GRACE}, {now + HORIZON}]"
+            ),
+        )
+
+    if request.start_stop_id is not None and request.start_stop_id not in gtfs_data.stops:
+        raise HTTPException(status_code=400, detail=f"Start stop {request.start_stop_id} not found")
+    if request.end_stop_id is not None and request.end_stop_id not in gtfs_data.stops:
+        raise HTTPException(status_code=400, detail=f"End stop {request.end_stop_id} not found")
+
+    return find_route(request, connection_store, gtfs_data, footpaths_data)
 
 
 @app.websocket("/ws")
