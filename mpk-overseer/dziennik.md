@@ -30,3 +30,28 @@ Dodałem możliwość wyboru customowych punktów startu i końca podróży, za 
 
 Doszlifowałem trochę UI, trasa na mapie nie jest już 3 długimi prostymi odcinkami, teraz mamy odcinki między pośredniemi przystankami.
 
+## 26.06
+
+Po kolejnej sesji bugowania 'znikających' pojazdów doszedłem do wniosku, że dane lokalizacji pojazdów, które udostępniane na krakowiej stronie są poprostu błędne i nic na to nie zdziałam. Szkoda. Mimo to, podoba mi się jak obecnie wygląda projekt i uważam, że wszystkie początkowe założenia zostały spełnione.
+
+## 28.06 — podsumowanie
+
+**mpk-overseer** to aplikacja webowa do śledzenia komunikacji miejskiej w Krakowie. Zbudowałem ją jako SPA: backend w **FastAPI** (Python) + frontend w **React/TypeScript** z mapą **Leaflet**. Całość uruchamia się przez `docker compose up --build`. Aplikacja trzyma wszystkie dane w RAM.
+
+Początkowy cel (realtime pojazdy na mapie) rozszerzyłem o wyszukiwanie połączeń **CSA** z precomputed przejściami pieszymi (do 30 min). Oba główne wątki udało się domknąć:
+
+**Realtime**
+- Backend co ~1 s pobiera **GTFS-Realtime** z trzech feedów ZTP (autobusy, tramwaje, metropolitalne(?)) i streamuje pozycje przez websockety.
+- Frontend animuje markery (LERP), przy skokach >1500 m pomiędzny odczytami danych animacja jest wyłączana.
+
+**Wyszukiwanie tras (CSA)**
+- Statyczne dane gfts ładowane przy starcie, połączenia trzymane w blokach 4h z horyzontem ~72h i regenerującym store bloków.
+- **CSA** (earliest arrival) + precomputed `footpaths.json` dla przesiadek pieszych.
+- Można wskazać start/koniec markerami na mapie, trasa rysuje odcinki między pośrednimi przystankami.
+
+**Czego się nauczyłem**
+- **FastAPI** — lifespan, background tasks, WebSocket, szybki prototyp API.
+- **GTFS / GTFS-RT** — model rozkładów, kalendarze serwisów, feedy realtime.
+- **CSA** — budowa `Connection` z rozkładu, query na blokach czasowych, rekonstrukcja ścieżki.
+- **Leaflet + React** — warstwy markerów, popupy z tablicą odjazdów, integracja REST + WS.
+
