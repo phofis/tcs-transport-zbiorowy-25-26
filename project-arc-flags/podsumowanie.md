@@ -1,5 +1,9 @@
 Przed przeczytaniem podsumowania polecam pobieżnie przejść przez ``README.md``
 
+
+## Do czego użyliśmy AI
+Ai zostało wykorzystane w celu zaplanowania pracy (README), oraz debuggowania kodu.
+
 ## Planowanie (Piotr)
 Cały projekt rozpoczęliśmy od zaplanowania pełnego pipeline'u konwertowania danych z ``.osm.pbf`` do formatu, który będzie najkorzystniejszy pod względem szybkości preprocessingu. Zdecydowaliśmy się na tablice offsetów i krawędzi (jak na wykładzie) z AoS, ponieważ oba pola (wierzchołek końcowy krawędzi i waga) będą wykorzystywane ze sobą w Dijkstrze. Do partycjonowania grafu skorzystaliśmy z podziału METIS i biblioteki udostępnionej na githubie (wspomniana na wykładzie).
 
@@ -16,9 +20,20 @@ Zbierając wszystkie poprzednie pliki z danymi mogliśmy wygenerować flagi za p
 
 Mając tablice offsetów i krawędzi, partycje oraz flagi wykonujemy query za pomocą ``query.cpp``.
 
+Dodatkowo w celach testów przygotowaliśmy dodatkowo pipeline do ich generacji oraz porównywania wyników z zwykłą dijkstrą.
+
 Cały pipeline możemy aktywować z ``Makefile``.
 
 ## Preprocessing (Szymon)
+Najpierw zaimplementowaliśmy podstawową wersję preprocessingu - czyli dla każdego wierchołka granicznego oddzielna dijkstra na odwróconym grafie, następnie liniowe przejście po krawędziach i ustawienie flagi dla tych, które należą do najkrótszej ściezkii. Ta wersja nie sprawiła nam  zbyt wiele problemów: jedyną większą przeszkodą była obsługa wag krawędzi typu float, co obeszliśmy dodając lub odejmując epsilon przy porównywaniu - bez tego wiele flag nie było ustawianych.
+
+Tak samo wersja wielowątkowa wykorzystująca OpenMP nie sprawiła żadnych problemów. Jedyną istotną optymalizacją unikalną dla tej implementacji było zarządzanie tablicami dist - dla każdego wątku oddzielnie. Tutaj zamiast po każdej dijkstrze czyścić całą tablicę sprawdzaliśmy, czy w tej dijkstrze ten wierchołek został już wcześniej odwiedzony, jeśli nie to wartość w tablicy dist była traktowana jako inf.
+
+Problemy zaczęły się przy wersji na karte graficzną. Na początku przepisaliśmy liniowe przejście po krawędziah w celu oznaczenia flag na wywołanie kernela CUDA. Chociaż przyśpieszyło to troche czas wykonania, to i tak wywołanie dijsktry dla każdego wierzchołka granicznego zajmowało najwięcej czasu. Początkowo chcieliśmy zrobić coś podobnego do wersji wielowątkowej - jednak szybko doszliśmy od wniosku że nie ma to zbytnio sensu, ponieważ dla każdego wierzchołka granicznego kolejność na kolejce jest zupełnie inna. Czyli warpy na karcie wykonywałyby różne operacje, co mogłoby spowalniać preprocessing. 
+
+Zaczęliśmy więc szukać alternatyw dla dijkstry które można wykonywać równolegle na karcie graficznej. Probowaliśmy zaimplementować delta-stepping. Działa on następująco: dzielimy wierchołki na kubełki na podstawie ich odległości od źródła (np [0,5], [5,10] ...). Następnie dzielimy krawędzie wychodzące na lekkie i cięzkie. Krawędzie lekkie relaksujemy przed cięzkimi aż przestaniemy wrzucać do kubełków nowe wierchołki. Algorytm ten da się równoleglić - można relaksować wierchołki w kubełkach jednocześnie.
+
+Niestety w trakcie implementacji napotkaliśmy sporo problemów (między innymi przez nas nie dało się używać karty graficznej na serwerze studenckim przez kilka godzin), więc nie udało nam się zfinalizować efektywnej wersji dla CUDA. Mimo braku namacalnych wyników dzięki temu projektowi poznaliśmy i zrozumieliśmy algorytmy do obliczania najkrótszych ścieżek, które da się równoleglić.
 
 ## Benchmark (Piotr)
 
