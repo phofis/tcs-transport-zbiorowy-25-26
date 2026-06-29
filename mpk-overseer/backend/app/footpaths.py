@@ -25,8 +25,17 @@ FootpathMap = dict[str, list[Footpath]]
 def load_footpaths(path: Path | None = None) -> FootpathMap:
     target_path = path or DEFAULT_FOOTPATHS_PATH
     if not target_path.is_file():
-        logger.warning("Footpaths file not found at %s — walking transfers disabled", target_path)
-        return {}
+        if target_path == DEFAULT_FOOTPATHS_PATH:
+            logger.info("Footpaths file not found at %s — generating", target_path)
+            from scripts.precompute_footpaths import main as precompute_footpaths
+
+            precompute_footpaths()
+        if not target_path.is_file():
+            logger.warning(
+                "Footpaths file not found at %s — walking transfers disabled",
+                target_path,
+            )
+            return {}
 
     with target_path.open(encoding="utf-8") as fh:
         raw: dict[str, list[dict[str, int | str]]] = json.load(fh)
