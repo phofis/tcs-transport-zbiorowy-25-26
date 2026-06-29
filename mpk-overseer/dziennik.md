@@ -55,3 +55,5 @@ Początkowy cel (realtime pojazdy na mapie) rozszerzyłem o wyszukiwanie połąc
 - **CSA** — budowa `Connection` z rozkładu, query na blokach czasowych, rekonstrukcja ścieżki.
 - **Leaflet + React** — warstwy markerów, popupy z tablicą odjazdów, integracja REST + WS.
 
+**Używanie AI**
+Cały kod został wygenerowany z pomocą AI.
